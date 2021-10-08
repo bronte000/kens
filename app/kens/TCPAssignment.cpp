@@ -112,9 +112,21 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
       struct Socket* socket = socket_map[map_key];
       assert(socket->sin_family == AF_INET);
       if (socket->sin_port == 0) {
+        int check=0;
+        for (auto iter = socket_map.begin() ; iter != socket_map.end(); iter++) {
+          if(
+            (socket_address->sin_port==(iter->second->sin_port))&&(
+            ((iter->second->sin_addr.s_addr)==htonl(INADDR_ANY))||
+            (socket_address->sin_addr.s_addr==htonl(INADDR_ANY))||
+            (socket_address->sin_addr.s_addr==(iter->second->sin_addr.s_addr)))
+                    ){
+          check=1;}
+        }
+        if(check==0){
         socket->sin_port = socket_address->sin_port;
         socket->sin_addr = socket_address->sin_addr;
-        validance = 0;
+        validance=0;
+        }
       }
     }
     returnSystemCall(syscallUUID, validance);
