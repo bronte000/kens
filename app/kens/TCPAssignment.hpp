@@ -20,9 +20,12 @@
 namespace E {
 
 struct Socket {
+  // These are part of sockaddr_in
   sa_family_t sin_family = AF_INET; /* address family: AF_INET */
   in_port_t sin_port = 0;
   struct in_addr sin_addr; 
+  char sin_zero[8];  
+  // You may add some other fields below here
 };
 
 class TCPAssignment : public HostModule,

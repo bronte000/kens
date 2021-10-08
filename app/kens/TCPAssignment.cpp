@@ -91,11 +91,11 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     // this->syscall_bind(syscallUUID, pid, param.param1_int,
     //		static_cast<struct sockaddr *>(param.param2_ptr),
     //		(socklen_t) param.param3_int);
-  
     const struct sockaddr_in* socket_address = (const sockaddr_in*) param.param2_ptr;
     assert(socket_address->sin_family == AF_INET);
     int socket_descriptor = param.param1_int;
     int validance = -1; 
+    // Should check whether it uses the dupplicate address!
     if (socket_map.find(socket_descriptor) != socket_map.end()){
       struct Socket* socket = socket_map[socket_descriptor];
       assert(socket->sin_family == AF_INET);
@@ -108,11 +108,23 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     returnSystemCall(syscallUUID, validance);
     break;
   }
-  case GETSOCKNAME:
+  case GETSOCKNAME:{
     // this->syscall_getsockname(syscallUUID, pid, param.param1_int,
     //		static_cast<struct sockaddr *>(param.param2_ptr),
-    //		static_cast<socklen_t*>(param.param3_ptr));
+    //		static_cast<socklen_t*>(param.param3_ptr)); 
+    int socket_descriptor = param.param1_int;
+    int validance = -1;
+    if (socket_map.find(socket_descriptor) != socket_map.end()){
+      struct Socket* socket = socket_map[socket_descriptor];
+      if (socket->sin_port != 0) {
+        memcpy(param.param2_ptr, socket, sizeof(struct sockaddr));
+        *static_cast<socklen_t *>(param.param3_ptr) = sizeof(struct sockaddr);
+        validance = 0;
+      }
+    }
+    returnSystemCall(syscallUUID, validance);
     break;
+  }
   case GETPEERNAME:
     // this->syscall_getpeername(syscallUUID, pid, param.param1_int,
     //		static_cast<struct sockaddr *>(param.param2_ptr),
