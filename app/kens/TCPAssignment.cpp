@@ -44,9 +44,10 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     assert(param.param3_int == IPPROTO_TCP);  // protocol
 
     int socket_descriptor = createFileDescriptor(pid);
+    int map_key = pid * 10 + socket_descriptor;
     Socket* new_socket = new Socket;
-    assert(socket_map.find(socket_descriptor) == socket_map.end());
-    socket_map[socket_descriptor] = new_socket;
+    assert(socket_map.find(map_key) == socket_map.end());
+    socket_map[map_key] = new_socket;
 
     returnSystemCall(syscallUUID, socket_descriptor);
     break;
@@ -54,13 +55,14 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
   case CLOSE:{
     // this->syscall_close(syscallUUID, pid, param.param1_int);
     int socket_descriptor = param.param1_int;
-    if (socket_map.find(socket_descriptor) == socket_map.end()){
+    int map_key = pid * 10 + socket_descriptor;
+    if (socket_map.find(map_key) == socket_map.end()){
       returnSystemCall(syscallUUID, -1);
     }
     else {
       removeFileDescriptor(pid, socket_descriptor);
-      delete(socket_map[socket_descriptor]);
-      socket_map.erase(socket_descriptor);
+      delete(socket_map[map_key]);
+      socket_map.erase(map_key);
       returnSystemCall(syscallUUID, 0);
     }
     break;
@@ -94,10 +96,11 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     const struct sockaddr_in* socket_address = (const sockaddr_in*) param.param2_ptr;
     assert(socket_address->sin_family == AF_INET);
     int socket_descriptor = param.param1_int;
+    int map_key = pid * 10 + socket_descriptor;
     int validance = -1; 
     // Should check whether it uses the dupplicate address!
-    if (socket_map.find(socket_descriptor) != socket_map.end()){
-      struct Socket* socket = socket_map[socket_descriptor];
+    if (socket_map.find(map_key) != socket_map.end()){
+      struct Socket* socket = socket_map[map_key];
       assert(socket->sin_family == AF_INET);
       if (socket->sin_port == 0) {
         socket->sin_port = socket_address->sin_port;
@@ -113,9 +116,10 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     //		static_cast<struct sockaddr *>(param.param2_ptr),
     //		static_cast<socklen_t*>(param.param3_ptr)); 
     int socket_descriptor = param.param1_int;
+    int map_key = pid * 10 + socket_descriptor;
     int validance = -1;
-    if (socket_map.find(socket_descriptor) != socket_map.end()){
-      struct Socket* socket = socket_map[socket_descriptor];
+    if (socket_map.find(map_key) != socket_map.end()){
+      struct Socket* socket = socket_map[map_key];
       if (socket->sin_port != 0) {
         memcpy(param.param2_ptr, socket, sizeof(struct sockaddr));
         *static_cast<socklen_t *>(param.param3_ptr) = sizeof(struct sockaddr);
