@@ -44,7 +44,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     assert(param.param3_int == IPPROTO_TCP);  // protocol
 
     int socket_descriptor = createFileDescriptor(pid);
-    Socket* new_socket = (Socket*) malloc(sizeof(struct Socket));
+    Socket* new_socket = new Socket;
     assert(socket_map.find(socket_descriptor) == socket_map.end());
     socket_map[socket_descriptor] = new_socket;
 
@@ -59,7 +59,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     }
     else {
       removeFileDescriptor(pid, socket_descriptor);
-      free(socket_map[socket_descriptor]);
+      delete(socket_map[socket_descriptor]);
       socket_map.erase(socket_descriptor);
       returnSystemCall(syscallUUID, 0);
     }
@@ -92,13 +92,14 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     //		static_cast<struct sockaddr *>(param.param2_ptr),
     //		(socklen_t) param.param3_int);
   
+    const struct sockaddr_in* socket_address = (const sockaddr_in*) param.param2_ptr;
+    assert(socket_address->sin_family == AF_INET);
     int socket_descriptor = param.param1_int;
     int validance = -1; 
     if (socket_map.find(socket_descriptor) != socket_map.end()){
       struct Socket* socket = socket_map[socket_descriptor];
-      if (socket->sin_port == -1) {
-        const struct sockaddr_in* socket_address = (const sockaddr_in*) param.param2_ptr;
-        assert(socket_address->sin_family == AF_INET);
+      assert(socket->sin_family == AF_INET);
+      if (socket->sin_port == 0) {
         socket->sin_port = socket_address->sin_port;
         socket->sin_addr = socket_address->sin_addr;
         validance = 0;

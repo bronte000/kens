@@ -21,7 +21,7 @@ namespace E {
 
 struct Socket {
   sa_family_t sin_family = AF_INET; /* address family: AF_INET */
-  in_port_t sin_port = -1;
+  in_port_t sin_port = 0;
   struct in_addr sin_addr; 
 };
 
