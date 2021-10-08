@@ -15,8 +15,15 @@
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
+#include <map>
 
 namespace E {
+
+struct Socket {
+  sa_family_t sin_family = AF_INET; /* address family: AF_INET */
+  in_port_t sin_port = -1;
+  struct in_addr sin_addr; 
+};
 
 class TCPAssignment : public HostModule,
                       private RoutingInfoInterface,
@@ -24,6 +31,7 @@ class TCPAssignment : public HostModule,
                       public TimerModule {
 private:
   virtual void timerCallback(std::any payload) final;
+  std::map<int, struct Socket*> socket_map;
 
 public:
   TCPAssignment(Host &host);
