@@ -114,7 +114,6 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
       header.seq_num = socket->send_base; 
       header.checksum = NetworkUtil::tcp_sum(header.src_addr.sin_addr.s_addr,
                                             header.dest_addr.sin_addr.s_addr, nullptr, 0);
-
       Packet pkt (sizeof(header));
       pkt.writeData(0, &header, sizeof(header));
       sendPacket("IPv4", std::move(pkt));  
@@ -124,7 +123,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     returnSystemCall(syscallUUID, validance);
     break;
   }
-  case LISTEN:
+  case LISTEN: 
     // this->syscall_listen(syscallUUID, pid, param.param1_int,
     // param.param2_int);
     //param.param1_int==socketfd;
@@ -138,7 +137,6 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
         validance=0;
       }
     }
-    
 
     break;
   case ACCEPT:
