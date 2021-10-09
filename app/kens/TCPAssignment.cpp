@@ -66,8 +66,8 @@ void TCPAssignment::set_header(const Socket* src_socket, const sockaddr_in* dest
   (*pkt).writeData(14, &i_header, sizeof(i_header));
   (*pkt).writeData(34, &t_header, sizeof(t_header));
 }
-void TCPAssignment::set_header2(const Socket* src_socket, const sockaddr_in* dest_addr, Packet* pkt, uint16_t flag, seq_t seq_num,  
-  ,seq_t ack_num){
+
+void TCPAssignment::set_header2(const Socket* src_socket, const sockaddr_in* dest_addr, Packet* pkt, uint16_t flag){
   IP_Header i_header;
   TCP_Header t_header;
   i_header.src_ip = src_socket->host_address.sin_addr.s_addr;
@@ -75,8 +75,8 @@ void TCPAssignment::set_header2(const Socket* src_socket, const sockaddr_in* des
   t_header.src_port = src_socket->host_address.sin_port;
   t_header.dest_port = dest_addr->sin_port;
   t_header.flag= flag;
-  t_header.seq_num = seq_num; 
-  t_header.ack_num = ack_num; 
+  t_header.seq_num = src_socket->send_base; 
+  t_header.ack_num = src_socket->send_base; 
   t_header.checksum = htons(~NetworkUtil::tcp_sum(i_header.src_ip, i_header.dest_ip, nullptr, 0));
 
   (*pkt).writeData(14, &i_header, sizeof(i_header));
@@ -102,6 +102,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     assert(socket_descriptor > -1);
     int map_key = pid * 10 + socket_descriptor;
     Socket* new_socket = new Socket;
+    new_socket->pid = pid;
     assert(socket_map.find(map_key) == socket_map.end());
     socket_map[map_key] = new_socket;
 
@@ -254,29 +255,43 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   sockaddr_in src_addr = {.sin_port = t_header.src_port, .sin_addr = in_addr{i_header.src_ip}};
   sockaddr_in dest_addr = {.sin_port = t_header.dest_port, .sin_addr = in_addr{i_header.dest_ip}};
 
-  int SD = find_socket(&dest_addr, nullptr);  
-  if (SD == -1){
+  int map_key = find_socket(&dest_addr, nullptr);  
+  if (map_key == -1){
     //printf("-1 arrived => ip: %d, port: %d.\n", dest_addr.sin_addr, dest_addr.sin_port);
     //assert(0);
     return;
   }
 
-  Socket* socket = socket_map[SD];
+  Socket* socket = socket_map[map_key];
   //printf("state: %d\n", socket->state);
   switch (socket->state) {
     case S_DEFAULT: case S_BIND:
       break;
     case S_LISTEN:
       //socket->backlog//backlog
-      if(socket->backlog_queue.size()==socket->backlog){
+      if(socket->backlog_queue.size()>=socket->backlog){
         break;
       }
       if(t_header.flag&SYNbit){
-        seq_t ACK_num = t_header.seq_num+1;
+        //create new socket
+        int pid = socket->pid;
+        int socket_descriptor = createFileDescriptor(pid);
+        int map_key = pid * 10 + socket_descriptor;
+        assert(socket_map.find(map_key) == socket_map.end());
+        Socket* new_socket = new Socket;
+        new_socket->host_address = socket->host_address;
+        new_socket->peer_address = src_addr;
+        new_socket->ack_base = t_header.seq_num + 1;
+        new_socket->pid = pid;
+        socket_map[map_key] = new_socket;
+
+        //seq_t ACK_num = t_header.seq_num+1;
         const struct sockaddr_in* dest_address = (const sockaddr_in*) &src_addr;
         Packet pkt (pkt_size);  
-        set_header2(socket, dest_address, &pkt,(SYNbit||));
+
+        set_header2(socket, dest_address, &pkt,(SYNbit||ACKbit));
         sendPacket("IPv4", pkt);  
+        socket->backlog_queue.push(new_socket);       
       }
 
       break;

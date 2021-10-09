@@ -65,12 +65,13 @@ struct Socket {
   sockaddr_in peer_address;
   // You may add some other fields below here
   S_STATE state = S_DEFAULT;
-  int backlog = 0;
+  uint backlog = 0;
   seq_t send_base = 0;
   seq_t ack_base = 0;
+  int pid;
   UUID syscallUUID;
   UUID timerKey;
-  std::queue<int> backlog_queue;
+  std::queue<struct Socket*> backlog_queue;
   Socket(){
     host_address.sin_family = AF_INET;
     peer_address.sin_family = AF_INET;
@@ -85,8 +86,9 @@ private:
   virtual void timerCallback(std::any payload) final;
   int find_socket(const sockaddr_in* host_addr, const sockaddr_in* peer_addr);
   void set_header(const Socket* src_socket, const sockaddr_in* dest_addr, Packet* pkt);
+  void set_header2(const Socket* src_socket, const sockaddr_in* dest_addr, Packet* pkt, uint16_t flag);
   std::map<int, struct Socket*> socket_map;
-  std::queue<int> backlog_queue;
+
   const int pkt_size = 1000;
 public:
   TCPAssignment(Host &host);
