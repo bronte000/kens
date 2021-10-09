@@ -32,6 +32,7 @@ void TCPAssignment::finalize() {
 int TCPAssignment::find_socket(const sockaddr_in* host_addr, const sockaddr_in* peer_addr){
   auto addr_equal = [](const sockaddr_in* sock_addr1, const sockaddr_in* sock_addr2){
     if (sock_addr1->sin_port == sock_addr2->sin_port){
+      printf("sock_addr ip: %d, port:%d\n", sock_addr1->sin_addr.s_addr, sock_addr1->sin_port);
       if (sock_addr1->sin_addr.s_addr == htonl(INADDR_ANY)  ||
           sock_addr2->sin_addr.s_addr == htonl(INADDR_ANY)  ||
           sock_addr1->sin_addr.s_addr == sock_addr2->sin_addr.s_addr){
@@ -42,7 +43,7 @@ int TCPAssignment::find_socket(const sockaddr_in* host_addr, const sockaddr_in* 
   };
   for (auto iter = socket_map.begin() ; iter != socket_map.end(); iter++) {
     if (addr_equal(&iter->second->host_address, host_addr)){
-      if (peer_addr == nullptr || addr_equal(&iter->second->host_address, peer_addr)){
+      if (peer_addr == nullptr || addr_equal(&iter->second->peer_address, peer_addr)){
         return iter->first;  
       }
     }
@@ -230,9 +231,15 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   // Remove below
   // (void)fromModule;
   // (void)packet;
-  TCP_Header* header = new TCP_Header;
-  packet.readData(34, header, sizeof(header));
-  int SD = 0; //find_socket(&header->dest_addr, nullptr);
+  IP_Header i_header;
+  TCP_Header t_header;
+  packet.readData(14, &i_header, sizeof(i_header));
+  packet.readData(34, &t_header, sizeof(t_header));
+  //sockaddr_in src_addr = {.sin_port = t_header.src_port, .sin_addr = in_addr{i_header.src_ip}};
+  sockaddr_in dest_addr = {.sin_port = t_header.dest_port, .sin_addr = in_addr{i_header.dest_ip}};
+
+  int SD = find_socket(&dest_addr, nullptr);
+  //printf("SD2: %d, IP: %d, port: %d\n", find_socket(&dest_addr, nullptr), i_header.dest_ip, t_header.dest_port);
   //assert(SD== -1);
   //SD = find_socket(&header->src_addr, nullptr);
   //assert(SD== -1);
@@ -240,7 +247,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   //printf("recv src addrt%d. \n", header->src_addr.sin_addr);
   if (SD == -1) return;
   Socket* socket = socket_map[SD];
-  //  printf("state/l %d\n", socket->state);
+  printf("state: %d\n", socket->state);
   switch (socket->state) {
     case S_DEFAULT:
       break;
@@ -249,6 +256,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
     case S_LISTEN:
       break;
     case S_CONNECTING:{
+      //socket->state = S_C
       break;
     }
     default:
