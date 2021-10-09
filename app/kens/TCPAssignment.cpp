@@ -97,19 +97,29 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     // this->syscall_write(syscallUUID, pid, param.param1_int, param.param2_ptr,
     // param.param3_int);
     break;
-  case CONNECT:{
+  case CONNECT:
     // this->syscall_connect(syscallUUID, pid, param.param1_int,
     //		static_cast<struct sockaddr*>(param.param2_ptr),
     //(socklen_t)param.param3_int);
-
+    break;
+  
+  case LISTEN:{
+    //this->syscall_listen(syscallUUID, pid, param.param1_int,
+    //param.param2_int);
+    int socket_descriptor = param.param1_int;
+    int map_key = pid * 10 + socket_descriptor;
+    int validance=-1;
+    if (socket_map.find(map_key) != socket_map.end()){
+      struct Socket* socket = socket_map[map_key];
+      if(socket->state==S_BIND){
+        socket->state=S_LISTEN;
+        validance=0;
+      }
+    }
+    //now, I set the queue value to global... but is it right? Should the queue is in Socket Structure?
+    returnSystemCall(syscallUUID, validance);
     break;
   }
-  case LISTEN:
-    // this->syscall_listen(syscallUUID, pid, param.param1_int,
-    // param.param2_int);
-    //param.param1_int==socketfd;
-
-    break;
   case ACCEPT:
     // this->syscall_accept(syscallUUID, pid, param.param1_int,
     //		static_cast<struct sockaddr*>(param.param2_ptr),
