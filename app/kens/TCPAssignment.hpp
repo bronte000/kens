@@ -31,6 +31,17 @@ enum S_STATE {
   S_CONNECTING,
 };
 
+struct IP_Header {
+  uint16_t extra;
+  uint16_t length;
+  uint16_t identifier;
+  uint16_t flags;
+  uint16_t lifetime;
+  uint16_t checksum;  // sum 12 byte
+  uint16_t src_ip;  
+  uint16_t dest_ip;   // sum 8 bytes
+}; // should be 20 bytes
+
 struct TCP_Header {
   in_port_t src_port; //2byte
   in_port_t dest_port;  //2byte
@@ -40,7 +51,7 @@ struct TCP_Header {
   uint16_t recv_wdw;
   uint16_t checksum;  
   uint16_t zero;  // sum 8 bytes
-};
+};  //should be 20 bytes
 
 struct Socket {
   sockaddr_in host_address;
@@ -64,8 +75,10 @@ class TCPAssignment : public HostModule,
 private:
   virtual void timerCallback(std::any payload) final;
   int find_socket(const sockaddr_in* host_addr, const sockaddr_in* peer_addr);
+  void set_header(const Socket* src_socket, const sockaddr_in* dest_addr, Packet* pkt);
   std::map<int, struct Socket*> socket_map;
   std::queue<int> backlog_queue;
+  const int pkt_size = 1000;
 public:
   TCPAssignment(Host &host);
   virtual void initialize();

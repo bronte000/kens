@@ -28,6 +28,7 @@ void TCPAssignment::initialize() {
 void TCPAssignment::finalize() {
 }
 
+// Find sockete with host_addr/peer_Addr. You can put nullptr to peer_Addr.
 int TCPAssignment::find_socket(const sockaddr_in* host_addr, const sockaddr_in* peer_addr){
   auto addr_equal = [](const sockaddr_in* sock_addr1, const sockaddr_in* sock_addr2){
     if (sock_addr1->sin_port == sock_addr2->sin_port){
@@ -47,6 +48,22 @@ int TCPAssignment::find_socket(const sockaddr_in* host_addr, const sockaddr_in* 
     }
   }
   return -1;
+}
+
+// Set Ip/TCP headers
+void TCPAssignment::set_header(const Socket* src_socket, const sockaddr_in* dest_addr, Packet* pkt){
+  IP_Header i_header;
+  TCP_Header t_header;
+  i_header.src_ip = src_socket->host_address.sin_addr.s_addr;
+  i_header.dest_ip = dest_addr->sin_addr.s_addr;
+  t_header.src_port = src_socket->host_address.sin_port;
+  t_header.dest_port = dest_addr->sin_port;
+  t_header.seq_num = src_socket->send_base; 
+  t_header.ack_num = src_socket->send_base; 
+  t_header.checksum = htons(~NetworkUtil::tcp_sum(i_header.src_ip, i_header.dest_ip, nullptr, 0));
+
+  (*pkt).writeData(14, &i_header, sizeof(i_header));
+  (*pkt).writeData(34, &t_header, sizeof(t_header));
 }
 
 void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
@@ -107,20 +124,11 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
       struct Socket* socket = socket_map[map_key];
       const struct sockaddr_in* dest_address = (const sockaddr_in*) param.param2_ptr;
 
-      TCP_Header header;
-      header.src_addr = socket->host_address;
-      header.dest_addr = *dest_address;
-      header.seq_num = socket->send_base; 
-
-      header.checksum = htons(~NetworkUtil::tcp_sum(header.src_addr.sin_addr.s_addr,
-                                            header.dest_addr.sin_addr.s_addr, nullptr, 0));
-
-      Packet pkt (100);  
-      pkt.writeData(0, &header, sizeof(header));  
+      Packet pkt (pkt_size);  
+      set_header(socket, dest_address, &pkt);
       socket->state = S_CONNECTING;
       socket->syscallUUID = syscallUUID;
-      sendPacket("IPv4", std::move(pkt));  
-
+      sendPacket("IPv4", pkt);  
       // Should add timer here
     }
     break;
@@ -214,16 +222,25 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   // (void)fromModule;
   // (void)packet;
   TCP_Header* header = new TCP_Header;
-  packet.readData(0, header, sizeof(header));
-  int SD = find_socket(&header->dest_addr, &header->src_addr);
+  packet.readData(34, header, sizeof(header));
+  int SD = 0; //find_socket(&header->dest_addr, nullptr);
+  //assert(SD== -1);
+  //SD = find_socket(&header->src_addr, nullptr);
+  //assert(SD== -1);
+  //printf("recv src port: %d. \n", header->src_addr.sin_port);
+  //printf("recv src addrt%d. \n", header->src_addr.sin_addr);
+  if (SD == -1) return;
   Socket* socket = socket_map[SD];
-  
+    printf("state/l %d\n", socket->state);
   switch (socket->state) {
     case S_DEFAULT:
+      break;
     case S_BIND:
+      break;
     case S_LISTEN:
+      break;
     case S_CONNECTING:{
-
+      break;
     }
     default:
       assert(0);
