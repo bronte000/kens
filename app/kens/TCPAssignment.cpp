@@ -28,6 +28,27 @@ void TCPAssignment::initialize() {
 void TCPAssignment::finalize() {
 }
 
+int TCPAssignment::find_socket(const sockaddr_in* host_addr, const sockaddr_in* peer_addr){
+  auto addr_equal = [](const sockaddr_in* sock_addr1, const sockaddr_in* sock_addr2){
+    if (sock_addr1->sin_port == sock_addr2->sin_port){
+      if (sock_addr1->sin_addr.s_addr == htonl(INADDR_ANY)  ||
+          sock_addr2->sin_addr.s_addr == htonl(INADDR_ANY)  ||
+          sock_addr1->sin_addr.s_addr == sock_addr2->sin_addr.s_addr){
+            return true;
+      }
+    }
+    return false;
+  };
+  for (auto iter = socket_map.begin() ; iter != socket_map.end(); iter++) {
+    if (addr_equal(&iter->second->host_address, host_addr)){
+      if (peer_addr == nullptr || addr_equal(&iter->second->host_address, peer_addr)){
+        return iter->first;  
+      }
+    }
+  }
+  return -1;
+}
+
 void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
                                    const SystemCallParameter &param) {
 
@@ -44,6 +65,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     assert(param.param3_int == IPPROTO_TCP);  // protocol
 
     int socket_descriptor = createFileDescriptor(pid);
+    assert(socket_descriptor > -1);
     int map_key = pid * 10 + socket_descriptor;
     Socket* new_socket = new Socket;
     assert(socket_map.find(map_key) == socket_map.end());
@@ -102,31 +124,17 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     // this->syscall_bind(syscallUUID, pid, param.param1_int,
     //		static_cast<struct sockaddr *>(param.param2_ptr),
     //		(socklen_t) param.param3_int);
-    const struct sockaddr_in* socket_address = (const sockaddr_in*) param.param2_ptr;
-    assert(socket_address->sin_family == AF_INET);
     int socket_descriptor = param.param1_int;
     int map_key = pid * 10 + socket_descriptor;
     int validance = -1; 
     // Should check whether it uses the dupplicate address!
     if (socket_map.find(map_key) != socket_map.end()){
       struct Socket* socket = socket_map[map_key];
-      assert(socket->sin_family == AF_INET);
-      if (socket->sin_port == 0) {
-        int check=0;
-        for (auto iter = socket_map.begin() ; iter != socket_map.end(); iter++) {
-          if(
-            (socket_address->sin_port==(iter->second->sin_port))&&(
-            ((iter->second->sin_addr.s_addr)==htonl(INADDR_ANY))||
-            (socket_address->sin_addr.s_addr==htonl(INADDR_ANY))||
-            (socket_address->sin_addr.s_addr==(iter->second->sin_addr.s_addr)))
-                    ){
-          check=1;}
-        }
-        if(check==0){
-        socket->sin_port = socket_address->sin_port;
-        socket->sin_addr = socket_address->sin_addr;
+      const struct sockaddr_in* socket_address = (const sockaddr_in*) param.param2_ptr;
+      if (!socket->host_address.sin_port && find_socket(socket_address, nullptr) == -1){
+        socket->host_address.sin_port = socket_address->sin_port;
+        socket->host_address.sin_addr = socket_address->sin_addr;
         validance=0;
-        }
       }
     }
     returnSystemCall(syscallUUID, validance);
@@ -141,8 +149,8 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     int validance = -1;
     if (socket_map.find(map_key) != socket_map.end()){
       struct Socket* socket = socket_map[map_key];
-      if (socket->sin_port != 0) {
-        memcpy(param.param2_ptr, socket, sizeof(struct sockaddr));
+      if (socket->host_address.sin_port != 0) {
+        memcpy(param.param2_ptr, &socket->host_address, sizeof(struct sockaddr));
         *static_cast<socklen_t *>(param.param3_ptr) = sizeof(struct sockaddr);
         validance = 0;
       }
@@ -150,11 +158,24 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     returnSystemCall(syscallUUID, validance);
     break;
   }
-  case GETPEERNAME:
+  case GETPEERNAME:{
     // this->syscall_getpeername(syscallUUID, pid, param.param1_int,
     //		static_cast<struct sockaddr *>(param.param2_ptr),
     //		static_cast<socklen_t*>(param.param3_ptr));
+    int socket_descriptor = param.param1_int;
+    int map_key = pid * 10 + socket_descriptor;
+    int validance = -1;
+    if (socket_map.find(map_key) != socket_map.end()){
+      struct Socket* socket = socket_map[map_key];
+      if (!socket->peer_address.sin_port) {
+        memcpy(param.param2_ptr, &socket->peer_address, sizeof(struct sockaddr));
+        *static_cast<socklen_t *>(param.param3_ptr) = sizeof(struct sockaddr);
+        validance = 0;
+      }
+    }
+    returnSystemCall(syscallUUID, validance);
     break;
+  }
   default:
     assert(0);
   }

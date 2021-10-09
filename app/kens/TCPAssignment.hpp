@@ -20,12 +20,15 @@
 namespace E {
 
 struct Socket {
-  // These are part of sockaddr_in
-  sa_family_t sin_family = AF_INET; /* address family: AF_INET */
-  in_port_t sin_port = 0;
-  struct in_addr sin_addr; 
-  char sin_zero[8];  
+  sockaddr_in host_address;
+  sockaddr_in peer_address;
   // You may add some other fields below here
+  Socket(){
+    host_address.sin_family = AF_INET;
+    host_address.sin_port = 0;
+    peer_address.sin_family = AF_INET;
+    peer_address.sin_port = 0;
+  }
 };
 
 class TCPAssignment : public HostModule,
@@ -34,6 +37,7 @@ class TCPAssignment : public HostModule,
                       public TimerModule {
 private:
   virtual void timerCallback(std::any payload) final;
+  int find_socket(const sockaddr_in* host_addr, const sockaddr_in* peer_addr);
   std::map<int, struct Socket*> socket_map;
 
 public:
