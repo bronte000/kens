@@ -29,6 +29,8 @@ enum S_STATE {
   S_BIND,
   S_LISTEN,
   S_CONNECTING,
+  S_ACQUIRING,
+  S_CONNECTED,
 };
 
 struct IP_Header {
@@ -38,8 +40,8 @@ struct IP_Header {
   uint16_t flags;
   uint16_t lifetime;
   uint16_t checksum;  // sum 12 byte
-  uint16_t src_ip;  
-  uint16_t dest_ip;   // sum 8 bytes
+  uint32_t src_ip;  
+  uint32_t dest_ip;   // sum 8 bytes
 }; // should be 20 bytes
 
 struct TCP_Header {
@@ -62,6 +64,7 @@ struct Socket {
   seq_t send_base = 0;
   seq_t ack_base = 0;
   UUID syscallUUID;
+  UUID timerKey;
   std::queue<int> backlog_queue;
   Socket(){
     host_address.sin_family = AF_INET;
