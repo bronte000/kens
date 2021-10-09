@@ -43,11 +43,9 @@ struct Socket {
   int backlog;
   Socket(){
     host_address.sin_family = AF_INET;
-    host_address.sin_port = 0;
     peer_address.sin_family = AF_INET;
-    peer_address.sin_port = 0;
     //You may add some other fields below here
-    state=0;
+    state=S_DEFAULT;
   }
 };
 

@@ -101,22 +101,14 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     // this->syscall_connect(syscallUUID, pid, param.param1_int,
     //		static_cast<struct sockaddr*>(param.param2_ptr),
     //(socklen_t)param.param3_int);
-    int socket_descriptor = param.param1_int;
-    int map_key = pid * 10 + socket_descriptor;
-    int validance = -1; 
-    if (socket_map.find(map_key) != socket_map.end()){
-      struct Socket* socket = socket_map[map_key];
-      const struct sockaddr_in* socket_address = (const sockaddr_in*) param.param2_ptr;
-      sendPacket("IPv4", std::move(packet));  
-      validance = 0;
-    }
-    returnSystemCall(syscallUUID, validance);
+
     break;
   }
   case LISTEN:
     // this->syscall_listen(syscallUUID, pid, param.param1_int,
     // param.param2_int);
     //param.param1_int==socketfd;
+
     break;
   case ACCEPT:
     // this->syscall_accept(syscallUUID, pid, param.param1_int,
@@ -134,7 +126,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     if (socket_map.find(map_key) != socket_map.end()){
       struct Socket* socket = socket_map[map_key];
       const struct sockaddr_in* socket_address = (const sockaddr_in*) param.param2_ptr;
-      if (!socket->host_address.sin_port && find_socket(socket_address, nullptr) == -1){
+      if (!socket->state && find_socket(socket_address, nullptr) == -1){
         socket->host_address.sin_port = socket_address->sin_port;
         socket->host_address.sin_addr = socket_address->sin_addr;
         validance=0;
@@ -153,7 +145,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     int validance = -1;
     if (socket_map.find(map_key) != socket_map.end()){
       struct Socket* socket = socket_map[map_key];
-      if (socket->host_address.sin_port != 0) {
+      if (socket->state != 0) {
         memcpy(param.param2_ptr, &socket->host_address, sizeof(struct sockaddr));
         *static_cast<socklen_t *>(param.param3_ptr) = sizeof(struct sockaddr);
         validance = 0;
@@ -171,7 +163,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     int validance = -1;
     if (socket_map.find(map_key) != socket_map.end()){
       struct Socket* socket = socket_map[map_key];
-      if (!socket->peer_address.sin_port) {
+      if (!socket->state) {
         memcpy(param.param2_ptr, &socket->peer_address, sizeof(struct sockaddr));
         *static_cast<socklen_t *>(param.param3_ptr) = sizeof(struct sockaddr);
         validance = 0;
