@@ -106,6 +106,8 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     int validance = -1; 
     if (socket_map.find(map_key) != socket_map.end()){
       struct Socket* socket = socket_map[map_key];
+      const struct sockaddr_in* socket_address = (const sockaddr_in*) param.param2_ptr;
+      sendPacket("IPv4", std::move(packet));  
       validance = 0;
     }
     returnSystemCall(syscallUUID, validance);
