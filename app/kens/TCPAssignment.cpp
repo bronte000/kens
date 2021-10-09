@@ -103,7 +103,6 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     //(socklen_t)param.param3_int);
     int socket_descriptor = param.param1_int;
     int map_key = pid * 10 + socket_descriptor;
-    int validance = -1; 
     if (socket_map.find(map_key) != socket_map.end()){
       struct Socket* socket = socket_map[map_key];
       const struct sockaddr_in* dest_address = (const sockaddr_in*) param.param2_ptr;
@@ -112,15 +111,19 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
       header.src_addr = socket->host_address;
       header.dest_addr = *dest_address;
       header.seq_num = socket->send_base; 
-      header.checksum = ~NetworkUtil::tcp_sum(header.src_addr.sin_addr.s_addr,
-                                            header.dest_addr.sin_addr.s_addr, nullptr, 0);
-      Packet pkt (sizeof(header));
-      pkt.writeData(0, &header, sizeof(header));
+
+      header.checksum = htons(~NetworkUtil::tcp_sum(header.src_addr.sin_addr.s_addr,
+                                            header.dest_addr.sin_addr.s_addr, nullptr, 0));
+
+      Packet pkt (100);  
+      pkt.writeData(0, &header, sizeof(header));  
+      socket->state = S_CONNECTING;
+      socket->syscalUUID = syscalUUID;
       sendPacket("IPv4", std::move(pkt));  
 
+      // Should add timer here
       validance = 0;
     }
-    returnSystemCall(syscallUUID, validance);
     break;
   }
   case LISTEN: {
@@ -209,8 +212,24 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
 
 void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   // Remove below
-  (void)fromModule;
-  (void)packet;
+  // (void)fromModule;
+  // (void)packet;
+  TCP_Header header = new TCP_Header;
+  packet.readData(0, header, sizeof(header));
+  int SD = find_socket(header->dest_addr, header->src_addr);
+  Socket* socket = socket_map[SD];
+  
+  switch (socket.state) {
+    case S_DEFAULT:
+    case S_BIND:
+    case S_LISTEN:
+    case S_CONNECTING:{
+
+    }
+    default:
+      assert(0);
+  }
+
 }
 
 void TCPAssignment::timerCallback(std::any payload) {

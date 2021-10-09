@@ -18,14 +18,18 @@
 #include <map>
 #include <queue>
 
-#define S_DEFAULT 0
-#define S_BIND 1
-#define S_LISTEN 2
 
 
 namespace E {
 
 typedef uint32_t seq_t;
+
+enum S_STATE {
+  S_DEFAULT = 0,
+  S_BIND,
+  S_LISTEN,
+  S_CONNECTING,
+};
 
 struct TCP_Header {
   sockaddr_in src_addr;
@@ -39,10 +43,11 @@ struct Socket {
   sockaddr_in host_address;
   sockaddr_in peer_address;
   // You may add some other fields below here
-  int state = S_DEFAULT;
+  S_STATE state = S_DEFAULT;
   int backlog = 0;
   seq_t send_base = 0;
   seq_t ack_base = 0;
+  UUID syscallUUID;
   Socket(){
     host_address.sin_family = AF_INET;
     peer_address.sin_family = AF_INET;
