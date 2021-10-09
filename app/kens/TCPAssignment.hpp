@@ -32,11 +32,14 @@ enum S_STATE {
 };
 
 struct TCP_Header {
-  sockaddr_in src_addr;
-  sockaddr_in dest_addr;
-  seq_t seq_num;
-  seq_t ack_num;
-  uint16_t checksum;
+  in_port_t src_port; //2byte
+  in_port_t dest_port;  //2byte
+  seq_t seq_num;  
+  seq_t ack_num;  //sum 8 bytes
+  uint16_t flag;
+  uint16_t recv_wdw;
+  uint16_t checksum;  
+  uint16_t zero;  // sum 8 bytes
 };
 
 struct Socket {
