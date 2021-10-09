@@ -49,7 +49,7 @@ private:
   virtual void timerCallback(std::any payload) final;
   int find_socket(const sockaddr_in* host_addr, const sockaddr_in* peer_addr);
   std::map<int, struct Socket*> socket_map;
-
+  std::queue<int> backlog_queue;
 public:
   TCPAssignment(Host &host);
   virtual void initialize();
