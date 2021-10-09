@@ -62,6 +62,7 @@ struct Socket {
   seq_t send_base = 0;
   seq_t ack_base = 0;
   UUID syscallUUID;
+  std::queue<int> backlog_queue;
   Socket(){
     host_address.sin_family = AF_INET;
     peer_address.sin_family = AF_INET;
