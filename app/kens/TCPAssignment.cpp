@@ -118,11 +118,10 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
       Packet pkt (100);  
       pkt.writeData(0, &header, sizeof(header));  
       socket->state = S_CONNECTING;
-      socket->syscalUUID = syscalUUID;
+      socket->syscallUUID = syscallUUID;
       sendPacket("IPv4", std::move(pkt));  
 
       // Should add timer here
-      validance = 0;
     }
     break;
   }
@@ -214,12 +213,12 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   // Remove below
   // (void)fromModule;
   // (void)packet;
-  TCP_Header header = new TCP_Header;
+  TCP_Header* header = new TCP_Header;
   packet.readData(0, header, sizeof(header));
-  int SD = find_socket(header->dest_addr, header->src_addr);
+  int SD = find_socket(&header->dest_addr, &header->src_addr);
   Socket* socket = socket_map[SD];
   
-  switch (socket.state) {
+  switch (socket->state) {
     case S_DEFAULT:
     case S_BIND:
     case S_LISTEN:
