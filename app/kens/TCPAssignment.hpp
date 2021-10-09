@@ -51,6 +51,7 @@ struct Socket {
   seq_t send_base = 0;
   seq_t ack_base = 0;
   UUID syscallUUID;
+  std::queue<int> backlog_queue;
   Socket(){
     host_address.sin_family = AF_INET;
     peer_address.sin_family = AF_INET;
@@ -65,7 +66,7 @@ private:
   virtual void timerCallback(std::any payload) final;
   int find_socket(const sockaddr_in* host_addr, const sockaddr_in* peer_addr);
   std::map<int, struct Socket*> socket_map;
-  std::queue<int> backlog_queue;
+  
 public:
   TCPAssignment(Host &host);
   virtual void initialize();

@@ -146,6 +146,14 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     // this->syscall_accept(syscallUUID, pid, param.param1_int,
     //		static_cast<struct sockaddr*>(param.param2_ptr),
     //		static_cast<socklen_t*>(param.param3_ptr));
+    int socket_descriptor = param.param1_int;
+    int map_key = pid * 10 + socket_descriptor;
+    if (socket_map.find(map_key) != socket_map.end()){
+      struct Socket* socket = socket_map[map_key];
+      if(socket->state==S_LISTEN){
+        
+      }
+    }
     break;
   case BIND: {
     // this->syscall_bind(syscallUUID, pid, param.param1_int,
