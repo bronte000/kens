@@ -7,6 +7,7 @@
 
 #include "TCPAssignment.hpp"
 #include <E/E_Common.hpp>
+#include <E/E_TimeUtil.hpp>
 #include <E/Networking/E_Host.hpp>
 #include <E/Networking/E_NetworkUtil.hpp>
 #include <E/Networking/E_Networking.hpp>
@@ -32,7 +33,6 @@ void TCPAssignment::finalize() {
 int TCPAssignment::find_socket(const sockaddr_in* host_addr, const sockaddr_in* peer_addr){
   auto addr_equal = [](const sockaddr_in* sock_addr1, const sockaddr_in* sock_addr2){
     if (sock_addr1->sin_port == sock_addr2->sin_port){
-      printf("sock_addr ip: %d, port:%d\n", sock_addr1->sin_addr.s_addr, sock_addr1->sin_port);
       if (sock_addr1->sin_addr.s_addr == htonl(INADDR_ANY)  ||
           sock_addr2->sin_addr.s_addr == htonl(INADDR_ANY)  ||
           sock_addr1->sin_addr.s_addr == sock_addr2->sin_addr.s_addr){
@@ -145,8 +145,8 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
       set_header(socket, dest_address, &pkt);
       socket->state = S_CONNECTING;
       socket->syscallUUID = syscallUUID;
+   //   socket->timerKey = addTimer(syscallUUID, TimeUtil::makeTime(20000000, TimeUtil::USEC));
       sendPacket("IPv4", pkt);  
-      // Should add timer here
     }
     break;
   }
@@ -254,20 +254,17 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   sockaddr_in src_addr = {.sin_port = t_header.src_port, .sin_addr = in_addr{i_header.src_ip}};
   sockaddr_in dest_addr = {.sin_port = t_header.dest_port, .sin_addr = in_addr{i_header.dest_ip}};
 
-  int SD = find_socket(&dest_addr, nullptr);
-  //printf("SD2: %d, IP: %d, port: %d\n", find_socket(&dest_addr, nullptr), i_header.dest_ip, t_header.dest_port);
-  //assert(SD== -1);
-  //SD = find_socket(&header->src_addr, nullptr);
-  //assert(SD== -1);
-  //printf("recv src port: %d. \n", header->src_addr.sin_port);
-  //printf("recv src addrt%d. \n", header->src_addr.sin_addr);
-  if (SD == -1) return;
+  int SD = find_socket(&dest_addr, nullptr);  
+  if (SD == -1){
+    //printf("-1 arrived => ip: %d, port: %d.\n", dest_addr.sin_addr, dest_addr.sin_port);
+    //assert(0);
+    return;
+  }
+
   Socket* socket = socket_map[SD];
-  printf("state: %d\n", socket->state);
+  //printf("state: %d\n", socket->state);
   switch (socket->state) {
-    case S_DEFAULT:
-      break;
-    case S_BIND:
+    case S_DEFAULT: case S_BIND:
       break;
     case S_LISTEN:
       //socket->backlog//backlog
@@ -284,9 +281,18 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 
       break;
     case S_CONNECTING:{
-      //socket->state = S_C
+      if (t_header.ack_num == socket->send_base){
+        socket->send_base++;
+        socket->state = S_CONNECTED;
+     //   cancelTimer(socket->timerKey);
+        returnSystemCall(socket->syscallUUID, 0);
+      }
       break;
     }
+    case S_ACQUIRING:
+      break;
+    case S_CONNECTED:
+      break;
     default:
       assert(0);
   }
@@ -295,7 +301,13 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 
 void TCPAssignment::timerCallback(std::any payload) {
   // Remove below
-  (void)payload;
+  // (void)payload;
+  if (std::any_cast<UUID>(payload)){
+    printf("time out! return -1\n");
+    returnSystemCall(std::any_cast<UUID>(payload), -1);
+  } else {
+    assert(0);
+  }
 }
 
 } // namespace E
