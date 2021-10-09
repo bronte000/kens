@@ -66,6 +66,22 @@ void TCPAssignment::set_header(const Socket* src_socket, const sockaddr_in* dest
   (*pkt).writeData(14, &i_header, sizeof(i_header));
   (*pkt).writeData(34, &t_header, sizeof(t_header));
 }
+void TCPAssignment::set_header2(const Socket* src_socket, const sockaddr_in* dest_addr, Packet* pkt, uint16_t flag, seq_t seq_num,  
+  ,seq_t ack_num){
+  IP_Header i_header;
+  TCP_Header t_header;
+  i_header.src_ip = src_socket->host_address.sin_addr.s_addr;
+  i_header.dest_ip = dest_addr->sin_addr.s_addr;
+  t_header.src_port = src_socket->host_address.sin_port;
+  t_header.dest_port = dest_addr->sin_port;
+  t_header.flag= flag;
+  t_header.seq_num = seq_num; 
+  t_header.ack_num = ack_num; 
+  t_header.checksum = htons(~NetworkUtil::tcp_sum(i_header.src_ip, i_header.dest_ip, nullptr, 0));
+
+  (*pkt).writeData(14, &i_header, sizeof(i_header));
+  (*pkt).writeData(34, &t_header, sizeof(t_header));
+}
 
 void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
                                    const SystemCallParameter &param) {
@@ -160,7 +176,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     if (socket_map.find(map_key) != socket_map.end()){
       struct Socket* socket = socket_map[map_key];
       if(socket->state==S_LISTEN){
-        
+        //socket->backlog_queue.front();
       }
     }
     break;
@@ -235,7 +251,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   TCP_Header t_header;
   packet.readData(14, &i_header, sizeof(i_header));
   packet.readData(34, &t_header, sizeof(t_header));
-  //sockaddr_in src_addr = {.sin_port = t_header.src_port, .sin_addr = in_addr{i_header.src_ip}};
+  sockaddr_in src_addr = {.sin_port = t_header.src_port, .sin_addr = in_addr{i_header.src_ip}};
   sockaddr_in dest_addr = {.sin_port = t_header.dest_port, .sin_addr = in_addr{i_header.dest_ip}};
 
   int SD = find_socket(&dest_addr, nullptr);
@@ -254,6 +270,18 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
     case S_BIND:
       break;
     case S_LISTEN:
+      //socket->backlog//backlog
+      if(socket->backlog_queue.size()==socket->backlog){
+        break;
+      }
+      if(t_header.flag&SYNbit){
+        seq_t ACK_num = t_header.seq_num+1;
+        const struct sockaddr_in* dest_address = (const sockaddr_in*) &src_addr;
+        Packet pkt (pkt_size);  
+        set_header2(socket, dest_address, &pkt,(SYNbit||));
+        sendPacket("IPv4", pkt);  
+      }
+
       break;
     case S_CONNECTING:{
       //socket->state = S_C

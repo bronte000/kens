@@ -24,6 +24,11 @@ namespace E {
 
 typedef uint32_t seq_t;
 
+const int ACKbit = 1 << 4;
+const int RSTbit = 1 << 2;
+const int SYNbit = 1 << 1;
+const int FINbit = 1 << 0;
+
 enum S_STATE {
   S_DEFAULT = 0,
   S_BIND,
