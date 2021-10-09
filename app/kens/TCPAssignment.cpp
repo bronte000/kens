@@ -116,6 +116,19 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
   case LISTEN:
     // this->syscall_listen(syscallUUID, pid, param.param1_int,
     // param.param2_int);
+    //param.param1_int==socketfd;
+    int socket_descriptor = param.param1_int;
+    int map_key = pid * 10 + socket_descriptor;
+    int validance=-1;
+    if (socket_map.find(map_key) != socket_map.end()){
+      struct Socket* socket = socket_map[map_key];
+      if(socket->state==S_BIND){
+        socket->state=S_LISTEN;
+        validance=0;
+      }
+    }
+    
+
     break;
   case ACCEPT:
     // this->syscall_accept(syscallUUID, pid, param.param1_int,
@@ -137,6 +150,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
         socket->host_address.sin_port = socket_address->sin_port;
         socket->host_address.sin_addr = socket_address->sin_addr;
         validance=0;
+        socket->state=S_BIND;
       }
     }
     returnSystemCall(syscallUUID, validance);

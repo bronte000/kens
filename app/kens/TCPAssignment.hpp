@@ -16,6 +16,12 @@
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
 #include <map>
+#include <queue>
+
+#define S_DEFAULT 0
+#define S_BIND 1
+#define S_LISTEN 2
+
 
 namespace E {
 
@@ -33,11 +39,15 @@ struct Socket {
   sockaddr_in host_address;
   sockaddr_in peer_address;
   // You may add some other fields below here
+  int state;
+  int backlog;
   Socket(){
     host_address.sin_family = AF_INET;
     host_address.sin_port = 0;
     peer_address.sin_family = AF_INET;
     peer_address.sin_port = 0;
+    //You may add some other fields below here
+    state=0;
   }
 };
 
