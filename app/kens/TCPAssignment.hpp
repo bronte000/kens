@@ -25,6 +25,16 @@
 
 namespace E {
 
+typedef uint32_t seq_t;
+
+struct TCP_Header {
+  in_port_t source_port;
+  in_port_t dest_port;
+  seq_t seq_num;
+  seq_t ack_num;
+  uint16_t checksum;
+};
+
 struct Socket {
   sockaddr_in host_address;
   sockaddr_in peer_address;
