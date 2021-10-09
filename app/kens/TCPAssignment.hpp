@@ -39,17 +39,13 @@ struct Socket {
   sockaddr_in host_address;
   sockaddr_in peer_address;
   // You may add some other fields below here
-  int state;
-  int backlog;
+  int state = S_DEFAULT;
+  int backlog = 0;
   seq_t send_base = 0;
   seq_t ack_base = 0;
   Socket(){
     host_address.sin_family = AF_INET;
-    host_address.sin_port = 0;
     peer_address.sin_family = AF_INET;
-    peer_address.sin_port = 0;
-    //You may add some other fields below here
-    state = S_DEFAULT;
   }
 };
 
@@ -61,7 +57,7 @@ private:
   virtual void timerCallback(std::any payload) final;
   int find_socket(const sockaddr_in* host_addr, const sockaddr_in* peer_addr);
   std::map<int, struct Socket*> socket_map;
-
+  std::queue<int> backlog_queue;
 public:
   TCPAssignment(Host &host);
   virtual void initialize();

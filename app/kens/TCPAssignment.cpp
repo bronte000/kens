@@ -97,7 +97,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     // this->syscall_write(syscallUUID, pid, param.param1_int, param.param2_ptr,
     // param.param3_int);
     break;
-  case CONNECT:{
+  case CONNECT: {
     // this->syscall_connect(syscallUUID, pid, param.param1_int,
     //		static_cast<struct sockaddr*>(param.param2_ptr),
     //(socklen_t)param.param3_int);
@@ -112,7 +112,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
       header.src_addr = socket->host_address;
       header.dest_addr = *dest_address;
       header.seq_num = socket->send_base; 
-      header.checksum = NetworkUtil::tcp_sum(header.src_addr.sin_addr.s_addr,
+      header.checksum = ~NetworkUtil::tcp_sum(header.src_addr.sin_addr.s_addr,
                                             header.dest_addr.sin_addr.s_addr, nullptr, 0);
       Packet pkt (sizeof(header));
       pkt.writeData(0, &header, sizeof(header));
@@ -123,10 +123,9 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     returnSystemCall(syscallUUID, validance);
     break;
   }
-  case LISTEN: 
+  case LISTEN: {
     // this->syscall_listen(syscallUUID, pid, param.param1_int,
     // param.param2_int);
-    //param.param1_int==socketfd;
     int socket_descriptor = param.param1_int;
     int map_key = pid * 10 + socket_descriptor;
     int validance=-1;
@@ -137,8 +136,10 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
         validance=0;
       }
     }
-
+    //now, I set the queue value to global... but is it right? Should the queue is in Socket Structure?
+    returnSystemCall(syscallUUID, validance);
     break;
+  }
   case ACCEPT:
     // this->syscall_accept(syscallUUID, pid, param.param1_int,
     //		static_cast<struct sockaddr*>(param.param2_ptr),
@@ -155,7 +156,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     if (socket_map.find(map_key) != socket_map.end()){
       struct Socket* socket = socket_map[map_key];
       const struct sockaddr_in* socket_address = (const sockaddr_in*) param.param2_ptr;
-      if (!socket->host_address.sin_port && find_socket(socket_address, nullptr) == -1){
+      if (!socket->state && find_socket(socket_address, nullptr) == -1){
         socket->host_address.sin_port = socket_address->sin_port;
         socket->host_address.sin_addr = socket_address->sin_addr;
         validance=0;
@@ -174,7 +175,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     int validance = -1;
     if (socket_map.find(map_key) != socket_map.end()){
       struct Socket* socket = socket_map[map_key];
-      if (socket->host_address.sin_port != 0) {
+      if (socket->state != 0) {
         memcpy(param.param2_ptr, &socket->host_address, sizeof(struct sockaddr));
         *static_cast<socklen_t *>(param.param3_ptr) = sizeof(struct sockaddr);
         validance = 0;
@@ -192,7 +193,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     int validance = -1;
     if (socket_map.find(map_key) != socket_map.end()){
       struct Socket* socket = socket_map[map_key];
-      if (!socket->peer_address.sin_port) {
+      if (!socket->state) {
         memcpy(param.param2_ptr, &socket->peer_address, sizeof(struct sockaddr));
         *static_cast<socklen_t *>(param.param3_ptr) = sizeof(struct sockaddr);
         validance = 0;
