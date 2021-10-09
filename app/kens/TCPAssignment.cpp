@@ -106,8 +106,19 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     int validance = -1; 
     if (socket_map.find(map_key) != socket_map.end()){
       struct Socket* socket = socket_map[map_key];
-      const struct sockaddr_in* socket_address = (const sockaddr_in*) param.param2_ptr;
-      sendPacket("IPv4", std::move(packet));  
+      const struct sockaddr_in* dest_address = (const sockaddr_in*) param.param2_ptr;
+
+      TCP_Header header;
+      header.src_addr = socket->host_address;
+      header.dest_addr = *dest_address;
+      header.seq_num = socket->send_base; 
+      header.checksum = NetworkUtil::tcp_sum(header.src_addr.sin_addr.s_addr,
+                                            header.dest_addr.sin_addr.s_addr, nullptr, 0);
+
+      Packet pkt (sizeof(header));
+      pkt.writeData(0, &header, sizeof(header));
+      sendPacket("IPv4", std::move(pkt));  
+
       validance = 0;
     }
     returnSystemCall(syscallUUID, validance);

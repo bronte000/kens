@@ -28,8 +28,8 @@ namespace E {
 typedef uint32_t seq_t;
 
 struct TCP_Header {
-  in_port_t source_port;
-  in_port_t dest_port;
+  sockaddr_in src_addr;
+  sockaddr_in dest_addr;
   seq_t seq_num;
   seq_t ack_num;
   uint16_t checksum;
@@ -41,13 +41,15 @@ struct Socket {
   // You may add some other fields below here
   int state;
   int backlog;
+  seq_t send_base = 0;
+  seq_t ack_base = 0;
   Socket(){
     host_address.sin_family = AF_INET;
     host_address.sin_port = 0;
     peer_address.sin_family = AF_INET;
     peer_address.sin_port = 0;
     //You may add some other fields below here
-    state=0;
+    state = S_DEFAULT;
   }
 };
 
