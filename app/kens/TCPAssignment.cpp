@@ -150,7 +150,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     returnSystemCall(syscallUUID, validance);
     break;
   }
-  case ACCEPT:
+  case ACCEPT:{
     // this->syscall_accept(syscallUUID, pid, param.param1_int,
     //		static_cast<struct sockaddr*>(param.param2_ptr),
     //		static_cast<socklen_t*>(param.param3_ptr));
@@ -163,6 +163,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
       }
     }
     break;
+  }
   case BIND: {
     // this->syscall_bind(syscallUUID, pid, param.param1_int,
     //		static_cast<struct sockaddr *>(param.param2_ptr),
@@ -239,7 +240,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   //printf("recv src addrt%d. \n", header->src_addr.sin_addr);
   if (SD == -1) return;
   Socket* socket = socket_map[SD];
-    printf("state/l %d\n", socket->state);
+  //  printf("state/l %d\n", socket->state);
   switch (socket->state) {
     case S_DEFAULT:
       break;
