@@ -51,36 +51,31 @@ int TCPAssignment::find_socket(const sockaddr_in* host_addr, const sockaddr_in* 
   return -1;
 }
 
-// Set Ip/TCP headers
-void TCPAssignment::set_header(const Socket* src_socket, const sockaddr_in* dest_addr, Packet* pkt){
-  IP_Header i_header;
-  TCP_Header t_header;
-  i_header.src_ip = src_socket->host_address.sin_addr.s_addr;
-  i_header.dest_ip = dest_addr->sin_addr.s_addr;
-  t_header.src_port = src_socket->host_address.sin_port;
-  t_header.dest_port = dest_addr->sin_port;
-  t_header.seq_num = src_socket->send_base; 
-  t_header.ack_num = src_socket->send_base; 
-  t_header.checksum = htons(~NetworkUtil::tcp_sum(i_header.src_ip, i_header.dest_ip, nullptr, 0));
+// Only set ""address, syn/ack, checksum"" 
+void TCPAssignment::set_packet(const Socket* socket, Packet* pkt, uint8_t* data, TCP_Header* t_header){
 
-  (*pkt).writeData(14, &i_header, sizeof(i_header));
-  (*pkt).writeData(34, &t_header, sizeof(t_header));
+  IP_Header i_header;
+
+  i_header.src_ip = socket->host_address.sin_addr.s_addr;
+  i_header.dest_ip = socket->peer_address.sin_addr.s_addr;
+  t_header->src_port = socket->host_address.sin_port;
+  t_header->dest_port = socket->peer_address.sin_port;
+  t_header->seq_num = socket->send_base; 
+  t_header->ack_num = socket->ack_base; 
+  t_header->checksum = htons(~NetworkUtil::tcp_sum(i_header.src_ip, i_header.dest_ip, data, pkt->getSize()-data_start));
+
+  pkt -> writeData(ip_start, &i_header, sizeof(i_header));
+  pkt -> writeData(tcp_start, &t_header, sizeof(t_header));
 }
 
-void TCPAssignment::set_header2(const Socket* src_socket, const sockaddr_in* dest_addr, Packet* pkt, uint16_t flag){
-  IP_Header i_header;
-  TCP_Header t_header;
-  i_header.src_ip = src_socket->host_address.sin_addr.s_addr;
-  i_header.dest_ip = dest_addr->sin_addr.s_addr;
-  t_header.src_port = src_socket->host_address.sin_port;
-  t_header.dest_port = dest_addr->sin_port;
-  t_header.flag= flag;
-  t_header.seq_num = src_socket->send_base; 
-  t_header.ack_num = src_socket->send_base; 
-  t_header.checksum = htons(~NetworkUtil::tcp_sum(i_header.src_ip, i_header.dest_ip, nullptr, 0));
-
-  (*pkt).writeData(14, &i_header, sizeof(i_header));
-  (*pkt).writeData(34, &t_header, sizeof(t_header));
+void TCPAssignment::try_connect(Socket* socket){
+      assert(socket->state == S_CONNECTING);
+      Packet pkt (data_start);  
+      TCP_Header t_header = {.flag = SYNbit};
+      set_packet(socket, &pkt, nullptr, &t_header);
+      socket->timerKey = addTimer(socket, TimeUtil::makeTime(20000000, TimeUtil::USEC));
+      sendPacket("IPv4", pkt);  
+      return;
 }
 
 void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
@@ -140,14 +135,11 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     int map_key = pid * 10 + socket_descriptor;
     if (socket_map.find(map_key) != socket_map.end()){
       struct Socket* socket = socket_map[map_key];
-      const struct sockaddr_in* dest_address = (const sockaddr_in*) param.param2_ptr;
-
-      Packet pkt (pkt_size);  
-      set_header(socket, dest_address, &pkt);
+      socket->pid = pid;
       socket->state = S_CONNECTING;
       socket->syscallUUID = syscallUUID;
-   //   socket->timerKey = addTimer(syscallUUID, TimeUtil::makeTime(20000000, TimeUtil::USEC));
-      sendPacket("IPv4", pkt);  
+      socket->peer_address = *(const sockaddr_in*) param.param2_ptr;
+      try_connect(socket);
     }
     break;
   }
@@ -261,10 +253,20 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   // Remove below
   // (void)fromModule;
   // (void)packet;
+  
   IP_Header i_header;
   TCP_Header t_header;
-  packet.readData(14, &i_header, sizeof(i_header));
-  packet.readData(34, &t_header, sizeof(t_header));
+  uint8_t data_buffer[max_data];
+  int data_size = packet.getSize()-data_start;
+
+  packet.readData(ip_start, &i_header, sizeof(i_header));
+  packet.readData(tcp_start, &t_header, sizeof(t_header));
+  packet.readData(data_start, data_buffer, data_size);
+
+  if (t_header.checksum != htons(
+    ~NetworkUtil::tcp_sum(i_header.src_ip, i_header.dest_ip, data_buffer, data_size))){
+      return;
+  }
   sockaddr_in src_addr = {.sin_port = t_header.src_port, .sin_addr = in_addr{i_header.src_ip}};
   sockaddr_in dest_addr = {.sin_port = t_header.dest_port, .sin_addr = in_addr{i_header.dest_ip}};
 
@@ -277,6 +279,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 
   Socket* socket = socket_map[map_key];
   //printf("state: %d\n", socket->state);
+  
   switch (socket->state) {
     case S_DEFAULT: case S_BIND:
       break;
@@ -296,30 +299,41 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         new_socket->peer_address = src_addr;
         new_socket->ack_base = t_header.seq_num + 1;
         new_socket->pid = pid;
+        new_socket->state = S_BLOCKED;
         socket_map[map_key] = new_socket;
 
-        //seq_t ACK_num = t_header.seq_num+1;
-        const struct sockaddr_in* dest_address = (const sockaddr_in*) &src_addr;
-        Packet pkt (pkt_size);  
+        Packet pkt (data_start);  
+        t_header.flag = SYNbit || ACKbit;
 
-        set_header2(socket, dest_address, &pkt,(SYNbit||ACKbit));
+        set_packet(new_socket, &pkt, nullptr, &t_header);
         sendPacket("IPv4", pkt);  
         socket->backlog_queue.push(new_socket);       
       }
-
       break;
     case S_CONNECTING:{
-      if (t_header.ack_num == socket->send_base){
+      if(t_header.flag&SYNbit && t_header.flag&ACKbit){
+        if (t_header.ack_num == socket->send_base +1){
         socket->send_base++;
         socket->state = S_CONNECTED;
-     //   cancelTimer(socket->timerKey);
+        cancelTimer(socket->timerKey);
         returnSystemCall(socket->syscallUUID, 0);
+        }
+      } else if ((~t_header.flag&ACKbit) && (i_header.length == 0)){
+        cancelTimer(socket->timerKey);
+        try_connect(socket);
+      } else {
+        assert(!i_header.length);
+        socket->state = S_BIND;
+        cancelTimer(socket->timerKey);
+        returnSystemCall(socket->syscallUUID, -1);
       }
       break;
     }
     case S_ACQUIRING:
       break;
     case S_CONNECTED:
+      break;
+    case S_BLOCKED:
       break;
     default:
       assert(0);
@@ -330,11 +344,10 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 void TCPAssignment::timerCallback(std::any payload) {
   // Remove below
   // (void)payload;
-  if (std::any_cast<UUID>(payload)){
-    printf("time out! return -1\n");
-    returnSystemCall(std::any_cast<UUID>(payload), -1);
-  } else {
-    assert(0);
+  Socket* socket = std::any_cast<Socket*>(payload);
+  assert(socket);
+  if (socket->state == S_CONNECTING){
+    try_connect(socket);
   }
 }
 
