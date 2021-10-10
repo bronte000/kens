@@ -24,10 +24,10 @@ namespace E {
 
 typedef uint32_t seq_t;
 
-const int ACKbit = 1 << 4;
-const int RSTbit = 1 << 2;
-const int SYNbit = 1 << 1;
-const int FINbit = 1 << 0;
+const uint16_t ACKbit = 1 << 4;
+const uint16_t RSTbit = 1 << 2;
+const uint16_t SYNbit = 1 << 1;
+const uint16_t FINbit = 1 << 0;
 
 const int ip_start = 14;
 const int tcp_start = 34;
@@ -59,7 +59,8 @@ struct TCP_Header {
   in_port_t dest_port;  //2byte
   seq_t seq_num;  
   seq_t ack_num;  //sum 8 bytes
-  uint16_t flag;
+  uint8_t unused;
+  uint8_t flag;
   uint16_t recv_wdw;
   uint16_t checksum;  
   uint16_t zero;  // sum 8 bytes

@@ -70,14 +70,12 @@ void TCPAssignment::set_packet(const Socket* socket, Packet* pkt, uint8_t* data,
 
 // call with socket trying to connecting
 void TCPAssignment::try_connect(Socket* socket){
-  printf("tryingconnect\n");
   assert(socket->state == S_CONNECTING);
   Packet pkt (data_start);  
   TCP_Header t_header = {.flag = SYNbit};
   set_packet(socket, &pkt, nullptr, &t_header);
   socket->timerKey = addTimer(socket, TimeUtil::makeTime(5, TimeUtil::SEC));
   sendPacket("IPv4", pkt);  
-  printf("tryingconnect end\n");
   return;
 }
 
@@ -161,6 +159,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
       struct Socket* socket = socket_map[map_key];
       if(socket->state==S_BIND){
         socket->state=S_LISTEN;
+        socket->backlog=param.param2_int;
         validance=0;
       }
     }
@@ -185,6 +184,9 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
         socket->backlog_queue.pop();
         assert(new_socket->state == S_BLOCKED);
         new_socket->state=S_ACCEPTING;
+        memcpy(param.param2_ptr, &socket->peer_address, sizeof(struct sockaddr));
+        *static_cast<socklen_t *>(param.param3_ptr) = sizeof(struct sockaddr);
+        returnSystemCall(syscallUUID,socket_descriptor);
       } else {
         // wait until S_listen takes it
         Socket *new_socket= new Socket(pid, createFileDescriptor(pid));
@@ -276,15 +278,13 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 
   //printf("data: %d\n", i_header.scr_ip);
   //printf("data: %d\n", i_header.dest_ip);
-  assert(t_header.checksum != 0);
-  asssert(t_header.checksum == htons(~NetworkUtil::tcp_sum(i_header.src_ip, i_header.dest_ip, data_buffer, 20)));
+  /*
   if (t_header.checksum != htons(
     ~NetworkUtil::tcp_sum(i_header.src_ip, i_header.dest_ip, data_buffer, 20))){
       return;
   }
+*/
 
-    assert(0);
-    return;
   sockaddr_in src_addr = {.sin_port = t_header.src_port, .sin_addr = in_addr{i_header.src_ip}};
   sockaddr_in dest_addr = {.sin_port = t_header.dest_port, .sin_addr = in_addr{i_header.dest_ip}};
 
@@ -297,15 +297,20 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 
   Socket* socket = socket_map[map_key];
   //printf("state: %d\n", socket->state);
-  
+  printf("state:%d\n",socket->state);
   switch (socket->state) {
     case S_DEFAULT: case S_BIND:
       break;
     case S_LISTEN:{
       //socket->backlog//backlog
+      
       bool accept_waiting = (socket->backlog_queue.size() == 1) && (socket->backlog_queue.front()->state == S_ACCEPTING);
       if( (!accept_waiting) && socket->backlog_queue.size() >= socket->backlog) break;
+      printf("flag: %x\n",t_header.flag);
+      printf("syn:%x\n",SYNbit);
+
       if (t_header.flag&SYNbit){
+        
         Socket* new_socket;
         if (accept_waiting){
           new_socket = socket->backlog_queue.front();
@@ -318,18 +323,19 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         new_socket->host_address = socket->host_address;
         new_socket->peer_address = src_addr;
         new_socket->ack_base = t_header.seq_num + 1;
+        new_socket->send_base= 3;//can delete
         int map_key = new_socket->pid * 10 + new_socket->sd;
         assert(socket_map.find(map_key) == socket_map.end());
         socket_map[map_key] = new_socket;
 
         Packet pkt (data_start);  
-        t_header.flag = SYNbit || ACKbit;
+        t_header.flag = SYNbit||ACKbit;
+        
         set_packet(new_socket, &pkt, nullptr, &t_header);
         sendPacket("IPv4", pkt);  
-        
         if (accept_waiting) returnSystemCall(new_socket->syscallUUID, new_socket->sd);
-        else socket->backlog_queue.push(new_socket);     
-      }  
+        else socket->backlog_queue.push(new_socket);  
+      } 
       break;
     }
     case S_CONNECTING:{
@@ -368,7 +374,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 void TCPAssignment::timerCallback(std::any payload) {
   // Remove below
   // (void)payload;
-  printf("timer expired!\n");
   Socket* socket = std::any_cast<Socket*>(payload);
   assert(socket);
   if (socket->state == S_CONNECTING){
