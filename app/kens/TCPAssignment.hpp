@@ -95,7 +95,7 @@ class TCPAssignment : public HostModule,
 private:
   virtual void timerCallback(std::any payload) final;
   int find_socket(const sockaddr_in* host_addr, const sockaddr_in* peer_addr);
-  void set_packet(const Socket* src_socket, uint8_t* buffer, size_t data_size);
+  void set_packet(const Socket* src_socket, Packet* pkt, uint8_t* buffer);
   void try_connect(Socket* socket);
   std::map<int, struct Socket*> socket_map;
 

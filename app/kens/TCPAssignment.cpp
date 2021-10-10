@@ -319,7 +319,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 
         Packet pkt (DATA_START);  
         t_header->flag = SYNbit || ACKbit;
-        set_packet(new_socket, &pkt, t_header);
+        set_packet(new_socket, &pkt, (uint8_t*) t_header);
         sendPacket("IPv4", pkt);  
         if (accept_waiting) returnSystemCall(new_socket->syscallUUID, new_socket->sd);
         else socket->backlog_queue.push(new_socket);  
