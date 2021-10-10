@@ -181,8 +181,6 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
         break;
       }
       if(socket->backlog_queue.size()!=0){
-        int acceptfd=createFileDescriptor(pid);
-        int map_key = pid * 10 + acceptfd;
         Socket *new_socket= socket->backlog_queue.front();
         socket->backlog_queue.pop();
         new_socket->state=S_CONNECTED;
