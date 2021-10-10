@@ -52,10 +52,10 @@ int TCPAssignment::find_socket(const sockaddr_in* host_addr, const sockaddr_in* 
 }
 
 // Write everything. Should set buffer which will be written to packet
-void TCPAssignment::set_packet(const Socket* socket, Packet* pkt, uint8_t* buffer){
+void TCPAssignment::set_packet(const Socket* socket, Packet* pkt, TCP_Header* tcp_buffer){
 
   IP_Header i_header;
-  TCP_Header* t_header = (TCP_Header*) &buffer[TCP_START];
+  TCP_Header* t_header = (TCP_Header*) tcp_buffer;
   i_header.src_ip = socket->host_address.sin_addr.s_addr;
   i_header.dest_ip = socket->peer_address.sin_addr.s_addr;
   t_header->src_port = socket->host_address.sin_port;
@@ -63,7 +63,7 @@ void TCPAssignment::set_packet(const Socket* socket, Packet* pkt, uint8_t* buffe
   t_header->seq_num = socket->send_base; 
   t_header->ack_num = socket->ack_base; 
   t_header->checksum = htons(~NetworkUtil::tcp_sum(i_header.src_ip, i_header.dest_ip,
-                                &buffer[TCP_START], pkt->getSize() - TCP_START));
+                                (uint8_t*) t_header, pkt->getSize() - TCP_START));
 
   pkt -> writeData(IP_START, &i_header, sizeof(i_header));
   pkt -> writeData(TCP_START, t_header, pkt->getSize() - TCP_START);
@@ -74,7 +74,7 @@ void TCPAssignment::try_connect(Socket* socket){
   assert(socket->state == S_CONNECTING);
   Packet pkt (DATA_START);  
   TCP_Header t_header = {.flag = SYNbit};
-  set_packet(socket, &pkt, (uint8_t*) &t_header);
+  set_packet(socket, &pkt, &t_header);
   socket->timerKey = addTimer(socket, TimeUtil::makeTime(5, TimeUtil::SEC));
   sendPacket("IPv4", pkt);  
   return;
@@ -275,6 +275,10 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   TCP_Header* t_header = (TCP_Header*) &buffer[TCP_START];
   uint16_t checksum = t_header->checksum;
   t_header->checksum = 0;
+  printf("src ip:%d, dec ip: %d\n", i_header->src_ip, i_header->dest_ip);
+  printf("src port: %d, dest port: %d\n", ntohs(t_header->src_port),ntohs(t_header->dest_port));
+  printf("flag: %x\n", t_header->flag);
+  printf("seq num: %d, ack num: %d\n", t_header->seq_num, t_header->ack_num);
 
   if (ntohs(checksum) & NetworkUtil::tcp_sum(i_header->src_ip, i_header->dest_ip,
                &buffer[TCP_START], pkt_size-TCP_START))  return;
@@ -291,13 +295,12 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 
   Socket* socket = socket_map[map_key];
   //printf("state: %d\n", socket->state);
-  printf("state:%d\n",socket->state);
   switch (socket->state) {
     case S_DEFAULT: case S_BIND:
       break;
     case S_LISTEN:{
       //socket->backlog//backlog
-      
+      printf("listening\n");
       bool accept_waiting = (socket->backlog_queue.size() == 1) && (socket->backlog_queue.front()->state == S_ACCEPTING);
       if( (!accept_waiting) && socket->backlog_queue.size() >= socket->backlog) break;
       if (t_header->flag&SYNbit){
@@ -306,6 +309,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
           new_socket = socket->backlog_queue.front();
           socket->backlog_queue.pop();
         } else {
+          printf("push to backlog\n");
           int socket_descriptor = createFileDescriptor(socket->pid);
           new_socket = new Socket(socket->pid, socket_descriptor);
           new_socket->state = S_BLOCKED;
@@ -317,9 +321,21 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         assert(socket_map.find(map_key) == socket_map.end());
         socket_map[map_key] = new_socket;
 
+        printf("sending packet\n");
         Packet pkt (DATA_START);  
+        assert(t_header->checksum == 0);
         t_header->flag = SYNbit || ACKbit;
-        set_packet(new_socket, &pkt, (uint8_t*) t_header);
+        printf("original t flag: %x\n", t_header->flag);
+        set_packet(new_socket, &pkt, t_header);
+        pkt_size = pkt.getSize();
+        pkt.readData(0, buffer, pkt_size); 
+        i_header = (IP_Header*) &buffer[IP_START];
+        t_header = (TCP_Header*) &buffer[TCP_START];
+        printf("src ip:%d, dec ip: %d\n", i_header->src_ip, i_header->dest_ip);
+        printf("src port: %d, dest port: %d\n", ntohs(t_header->src_port),ntohs(t_header->dest_port));
+        printf("flag: %x\n", t_header->flag);
+        printf("seq num: %d, ack num: %d\n", t_header->seq_num, t_header->ack_num);
+        printf("checksum %x\n", t_header->checksum);
         sendPacket("IPv4", pkt);  
         if (accept_waiting) returnSystemCall(new_socket->syscallUUID, new_socket->sd);
         else socket->backlog_queue.push(new_socket);  
