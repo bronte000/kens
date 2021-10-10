@@ -176,8 +176,21 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     int map_key = pid * 10 + socket_descriptor;
     if (socket_map.find(map_key) != socket_map.end()){
       struct Socket* socket = socket_map[map_key];
-      if(socket->state==S_LISTEN){
-        //socket->backlog_queue.front();
+      if(socket->state!=S_LISTEN){
+        returnSystemCall(syscallUUID,-1);
+        break;
+      }
+      if(socket->backlog_queue.size()!=0){
+        int acceptfd=createFileDescriptor(pid);
+        int map_key = pid * 10 + acceptfd;
+        Socket *new_socket= socket->backlog_queue.front();
+        socket->backlog_queue.pop();
+        new_socket->state=S_CONNECTED;
+        socket_map[map_key]=new_socket;
+
+        struct sockaddr_in *cli_addr = (struct sockaddr_in *)param.param2_ptr;
+		    *cli_addr=new_socket->peer_address;
+		    //param.param3_ptr = sizeof(struct sockaddr_in);
       }
     }
     break;
