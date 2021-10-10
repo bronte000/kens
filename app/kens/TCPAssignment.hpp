@@ -29,9 +29,9 @@ const int RSTbit = 1 << 2;
 const int SYNbit = 1 << 1;
 const int FINbit = 1 << 0;
 
-const int ip_start = 14;
-const int tcp_start = 34;
-const int data_start = 54;
+const int IP_START = 14;
+const int TCP_START = 34;
+const int DATA_START = 54;
 
 enum S_STATE {
   S_DEFAULT = 0,
@@ -94,12 +94,11 @@ class TCPAssignment : public HostModule,
 private:
   virtual void timerCallback(std::any payload) final;
   int find_socket(const sockaddr_in* host_addr, const sockaddr_in* peer_addr);
-  void set_packet(const Socket* src_socket, Packet* pkt, uint8_t* data, TCP_Header* t_header);
+  void set_packet(const Socket* src_socket, uint8_t* buffer, size_t data_size);
   void try_connect(Socket* socket);
   std::map<int, struct Socket*> socket_map;
 
-  const int pkt_size = 1054;
-  const int max_data = 1000;
+  const int BUFFER_SIZE = 2000;
 public:
   TCPAssignment(Host &host);
   virtual void initialize();
