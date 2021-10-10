@@ -36,6 +36,7 @@ enum S_STATE {
   S_CONNECTING,
   S_ACQUIRING,
   S_CONNECTED,
+  S_BLOCKED,
 };
 
 struct IP_Header {
@@ -85,11 +86,12 @@ class TCPAssignment : public HostModule,
 private:
   virtual void timerCallback(std::any payload) final;
   int find_socket(const sockaddr_in* host_addr, const sockaddr_in* peer_addr);
-  void set_header(const Socket* src_socket, const sockaddr_in* dest_addr, Packet* pkt);
-  void set_header2(const Socket* src_socket, const sockaddr_in* dest_addr, Packet* pkt, uint16_t flag);
+  void set_packet(const Socket* src_socket, Packet* pkt, uint8_t* data, IP_Header* i_header, TCP_Header* t_header);
+  void try_connect(Socket* socket);
   std::map<int, struct Socket*> socket_map;
 
-  const int pkt_size = 1000;
+  const int pkt_size = 1054;
+  const int max_data = 1000;
 public:
   TCPAssignment(Host &host);
   virtual void initialize();
