@@ -68,7 +68,19 @@ void TCPAssignment::set_packet(const Socket* socket, Packet* pkt, uint8_t* data,
   pkt -> writeData(tcp_start, &t_header, sizeof(t_header));
 }
 
+// call with socket trying to connecting
 void TCPAssignment::try_connect(Socket* socket){
+      assert(socket->state == S_CONNECTING);
+      Packet pkt (data_start);  
+      TCP_Header t_header = {.flag = SYNbit};
+      set_packet(socket, &pkt, nullptr, &t_header);
+      socket->timerKey = addTimer(socket, TimeUtil::makeTime(20000000, TimeUtil::USEC));
+      sendPacket("IPv4", pkt);  
+      return;
+}
+
+// call with socket listing 
+void TCPAssignment::try_accept(Socket* socket){
       assert(socket->state == S_CONNECTING);
       Packet pkt (data_start);  
       TCP_Header t_header = {.flag = SYNbit};
@@ -96,7 +108,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     int socket_descriptor = createFileDescriptor(pid);
     assert(socket_descriptor > -1);
     int map_key = pid * 10 + socket_descriptor;
-    Socket* new_socket = new Socket;
+    Socket* new_socket = new Socket(pid);
     new_socket->pid = pid;
     assert(socket_map.find(map_key) == socket_map.end());
     socket_map[map_key] = new_socket;
@@ -135,11 +147,15 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     int map_key = pid * 10 + socket_descriptor;
     if (socket_map.find(map_key) != socket_map.end()){
       struct Socket* socket = socket_map[map_key];
-      socket->pid = pid;
+      if(socket->state != S_BIND){
+        // should bind with arbitrary adrress;
+      }
       socket->state = S_CONNECTING;
       socket->syscallUUID = syscallUUID;
       socket->peer_address = *(const sockaddr_in*) param.param2_ptr;
       try_connect(socket);
+    } else {
+      returnSystemCall(syscallUUID, -1);
     }
     break;
   }
@@ -172,18 +188,17 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
         returnSystemCall(syscallUUID,-1);
         break;
       }
-      if(socket->accepting_num!=0){
+      if(socket->backlog_queue.size()!=0){
         Socket *new_socket= socket->backlog_queue.front();
-        if(new_socket->state=S_ACQUIRING)
         socket->backlog_queue.pop();
-        new_socket->state=S_CONNECTED;
-        socket_map[map_key]=new_socket;
-
-        struct sockaddr_in *cli_addr = (struct sockaddr_in *)param.param2_ptr;
-		    *cli_addr=new_socket->peer_address;
-		    //param.param3_ptr = sizeof(struct sockaddr_in);
-        socket->accepting_num-=1;
+        assert(new_socket->state == S_BLOCKED);
+        new_socket->state=S_ACCEPTING;
+      } else {
+        // should do accept repeatedly.
+        
       }
+    } else {
+      returnSystemCall(syscallUUID, -1);
     }
     break;
   }
@@ -285,7 +300,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       break;
     case S_LISTEN:
       //socket->backlog//backlog
-      if(socket->backlog_queue.size()-socket->accepting_num>=socket->backlog){
+      if(socket->backlog_queue.size() >= socket->backlog){
         break;
       }
       if(t_header.flag&SYNbit){
@@ -294,11 +309,10 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         int socket_descriptor = createFileDescriptor(pid);
         int map_key = pid * 10 + socket_descriptor;
         assert(socket_map.find(map_key) == socket_map.end());
-        Socket* new_socket = new Socket;
+        Socket* new_socket = new Socket(pid);
         new_socket->host_address = socket->host_address;
         new_socket->peer_address = src_addr;
         new_socket->ack_base = t_header.seq_num + 1;
-        new_socket->pid = pid;
         new_socket->state = S_BLOCKED;
         socket_map[map_key] = new_socket;
 
@@ -329,8 +343,10 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       }
       break;
     }
-    case S_ACQUIRING:
+    case S_ACCEPTING:{
+
       break;
+    }
     case S_CONNECTED:
       break;
     case S_BLOCKED:

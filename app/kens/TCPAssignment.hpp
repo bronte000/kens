@@ -38,7 +38,7 @@ enum S_STATE {
   S_BIND,
   S_LISTEN,
   S_CONNECTING,
-  S_ACQUIRING,
+  S_ACCEPTING,
   S_CONNECTED,
   S_BLOCKED,
 };
@@ -71,16 +71,17 @@ struct Socket {
   // You may add some other fields below here
   S_STATE state = S_DEFAULT;
   uint backlog = 0;
-  unit accepting_num=0;
+  //uint accepting_num=0;   //why do we need
   seq_t send_base = 0;
   seq_t ack_base = 0;
   int pid;
   UUID syscallUUID;
   UUID timerKey;
   std::queue<struct Socket*> backlog_queue;
-  Socket(){
+  Socket(int _pid){
     host_address.sin_family = AF_INET;
     peer_address.sin_family = AF_INET;
+    pid = _pid;
   }
 };
 
@@ -93,6 +94,7 @@ private:
   int find_socket(const sockaddr_in* host_addr, const sockaddr_in* peer_addr);
   void set_packet(const Socket* src_socket, Packet* pkt, uint8_t* data, TCP_Header* t_header);
   void try_connect(Socket* socket);
+  void try_accept(Socket* socket);
   std::map<int, struct Socket*> socket_map;
 
   const int pkt_size = 1054;
