@@ -75,13 +75,15 @@ struct Socket {
   seq_t send_base = 0;
   seq_t ack_base = 0;
   int pid;
+  int sd;
   UUID syscallUUID;
   UUID timerKey;
   std::queue<struct Socket*> backlog_queue;
-  Socket(int _pid){
+  Socket(int _pid, int _sd){
     host_address.sin_family = AF_INET;
     peer_address.sin_family = AF_INET;
     pid = _pid;
+    sd = _sd;
   }
 };
 
@@ -94,7 +96,6 @@ private:
   int find_socket(const sockaddr_in* host_addr, const sockaddr_in* peer_addr);
   void set_packet(const Socket* src_socket, Packet* pkt, uint8_t* data, TCP_Header* t_header);
   void try_connect(Socket* socket);
-  void try_accept(Socket* socket);
   std::map<int, struct Socket*> socket_map;
 
   const int pkt_size = 1054;
