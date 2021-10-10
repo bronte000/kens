@@ -52,27 +52,27 @@ int TCPAssignment::find_socket(const sockaddr_in* host_addr, const sockaddr_in* 
 }
 
 // Only set ""address, syn/ack, checksum"" 
-void TCPAssignment::set_packet(const Socket* socket, Packet* pkt, uint8_t* data,
-                                             IP_Header* i_header, TCP_Header* t_header){
-                             
-  i_header->src_ip = socket->host_address.sin_addr.s_addr;
-  i_header->dest_ip = socket->peer_address.sin_addr.s_addr;
+void TCPAssignment::set_packet(const Socket* socket, Packet* pkt, uint8_t* data, TCP_Header* t_header){
+
+  IP_Header i_header;
+
+  i_header.src_ip = socket->host_address.sin_addr.s_addr;
+  i_header.dest_ip = socket->peer_address.sin_addr.s_addr;
   t_header->src_port = socket->host_address.sin_port;
   t_header->dest_port = socket->peer_address.sin_port;
   t_header->seq_num = socket->send_base; 
   t_header->ack_num = socket->ack_base; 
-  t_header->checksum = htons(~NetworkUtil::tcp_sum(i_header->src_ip, i_header->dest_ip, data, i_header->length));
+  t_header->checksum = htons(~NetworkUtil::tcp_sum(i_header.src_ip, i_header.dest_ip, data, pkt->getSize()-data_start));
 
-  (*pkt).writeData(14, &i_header, sizeof(i_header));
-  (*pkt).writeData(34, &t_header, sizeof(t_header));
+  pkt -> writeData(ip_start, &i_header, sizeof(i_header));
+  pkt -> writeData(tcp_start, &t_header, sizeof(t_header));
 }
 
 void TCPAssignment::try_connect(Socket* socket){
       assert(socket->state == S_CONNECTING);
-      Packet pkt (pkt_size);  
-      IP_Header i_header= {.length = 0};
+      Packet pkt (data_start);  
       TCP_Header t_header = {.flag = SYNbit};
-      set_packet(socket, &pkt, nullptr, &i_header, &t_header);
+      set_packet(socket, &pkt, nullptr, &t_header);
       socket->timerKey = addTimer(socket, TimeUtil::makeTime(20000000, TimeUtil::USEC));
       sendPacket("IPv4", pkt);  
       return;
@@ -244,13 +244,14 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   IP_Header i_header;
   TCP_Header t_header;
   uint8_t data_buffer[max_data];
+  int data_size = packet.getSize()-data_start;
 
-  packet.readData(14, &i_header, sizeof(i_header));
-  packet.readData(34, &t_header, sizeof(t_header));
-  packet.readData(54, data_buffer, sizeof(i_header.length));
+  packet.readData(ip_start, &i_header, sizeof(i_header));
+  packet.readData(tcp_start, &t_header, sizeof(t_header));
+  packet.readData(data_start, data_buffer, data_size);
 
   if (t_header.checksum != htons(
-    ~NetworkUtil::tcp_sum(i_header.src_ip, i_header.dest_ip, data_buffer, i_header.length))){
+    ~NetworkUtil::tcp_sum(i_header.src_ip, i_header.dest_ip, data_buffer, data_size))){
       return;
   }
   sockaddr_in src_addr = {.sin_port = t_header.src_port, .sin_addr = in_addr{i_header.src_ip}};
@@ -288,11 +289,10 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         new_socket->state = S_BLOCKED;
         socket_map[map_key] = new_socket;
 
-        Packet pkt (pkt_size);  
-        i_header.length = 0;
+        Packet pkt (data_start);  
         t_header.flag = SYNbit || ACKbit;
 
-        set_packet(new_socket, &pkt, nullptr, &i_header, &t_header);
+        set_packet(new_socket, &pkt, nullptr, &t_header);
         sendPacket("IPv4", pkt);  
         socket->backlog_queue.push(new_socket);       
       }
