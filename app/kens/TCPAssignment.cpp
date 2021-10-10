@@ -180,8 +180,9 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
         returnSystemCall(syscallUUID,-1);
         break;
       }
-      if(socket->backlog_queue.size()!=0){
+      if(socket->accepting_num!=0){
         Socket *new_socket= socket->backlog_queue.front();
+        if(new_socket->state=S_ACQUIRING)
         socket->backlog_queue.pop();
         new_socket->state=S_CONNECTED;
         socket_map[map_key]=new_socket;
@@ -189,6 +190,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
         struct sockaddr_in *cli_addr = (struct sockaddr_in *)param.param2_ptr;
 		    *cli_addr=new_socket->peer_address;
 		    //param.param3_ptr = sizeof(struct sockaddr_in);
+        socket->accepting_num-=1;
       }
     }
     break;
@@ -280,7 +282,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       break;
     case S_LISTEN:
       //socket->backlog//backlog
-      if(socket->backlog_queue.size()>=socket->backlog){
+      if(socket->backlog_queue.size()-socket->accepting_num>=socket->backlog){
         break;
       }
       if(t_header.flag&SYNbit){

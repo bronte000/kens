@@ -66,6 +66,7 @@ struct Socket {
   // You may add some other fields below here
   S_STATE state = S_DEFAULT;
   uint backlog = 0;
+  unit accepting_num=0;
   seq_t send_base = 0;
   seq_t ack_base = 0;
   int pid;
