@@ -73,13 +73,17 @@ void TCPAssignment::set_packet(const Socket* socket, Packet* pkt, TCP_Header* tc
 
 // call with socket trying to connecting
 void TCPAssignment::try_connect(Socket* socket){
-  printf("src ip: %d, port: %d, dest ip: %d, port: %d.\n", ntohl(socket->host_address.sin_addr.s_addr),
-    ntohs(socket->host_address.sin_port), ntohl(socket->peer_address.sin_addr.s_addr), ntohs(socket->peer_address.sin_port));
- // printf("recieevd seq: %d, ack: %d, pid: %d, flag: %x\n",
+  /*printf("src ip: %d, port: %d, dest ip: %d, port: %d.\n", ntohl(socket->host_address.sin_addr.s_addr),
+    ntohs(socket->host_address.sin_port), ntohl(socket->peer_address.sin_addr.s_addr), ntohs(socket->peer_address.sin_port));*/
+
   assert(socket->state == S_CONNECTING);
   Packet pkt (DATA_START);  
-  TCP_Header t_header2 = {.flag = SYNbit};
-  set_packet(socket, &pkt, &t_header2);
+  TCP_Header t_header = {.flag = SYNbit};
+  set_packet(socket, &pkt, &t_header);
+  uint8_t buffer[1000];
+  pkt.readData(0, buffer, DATA_START); 
+  TCP_Header* t_header2 = (TCP_Header*) &buffer[TCP_START];
+  //printf("sendnum: %d,\n", ntohl(t_header2->seq_num));
   //socket->timerKey = addTimer(socket, TimeUtil::makeTime(5, TimeUtil::SEC));
   sendPacket("IPv4", pkt);  
   return;
@@ -336,6 +340,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
     case S_DEFAULT: case S_BIND:
       break;
     case S_LISTEN:{
+    //  printf("listening?\n");
       if((!socket->accept_called) && (socket->back_count >= socket->backlog)) break;
       if (t_header->flag&SYNbit){
         Socket* new_socket;
@@ -368,24 +373,22 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
     case S_CONNECTING:{
       //printf("connecting\n");
       if(t_header->flag == (SYNbit | ACKbit)){
-      printf("syn ack backed\n");
-      printf("returned ack: %d, current send: %d", ntohs(t_header->ack_num), socket->send_base +1 )
-        if (ntohs(t_header->ack_num) == socket->send_base +1){
+ //     printf("syn ack backed\n");
+   //   printf("returned ack: %d, current send: %d", ntohs(t_header->ack_num), socket->send_base +1 );
+        if (ntohl(t_header->ack_num) == socket->send_base +1){
           src_addr = socket->host_address;
           dest_addr = socket->peer_address;
-  printf("src ip: %d, port: %d, dest ip: %d, port: %d.\n", ntohl(src_addr.sin_addr.s_addr),
-    ntohs(src_addr.sin_port), ntohl(dest_addr.sin_addr.s_addr), ntohs(dest_addr.sin_port));
           
-        socket->send_base++;
-        socket->ack_base = ntohs(t_header->seq_num)+1;
-        socket->state = S_CONNECTED;
-        Packet pkt (DATA_START);  
-        t_header->flag = ACKbit;
-        set_packet(socket, &pkt, t_header);
-        sendPacket("IPv4", pkt);  
+          socket->send_base++;
+          socket->ack_base = ntohl(t_header->seq_num)+1;
+          socket->state = S_CONNECTED;
+          Packet pkt (DATA_START);  
+          t_header->flag = ACKbit;
+          set_packet(socket, &pkt, t_header);
+          sendPacket("IPv4", pkt);  
 
-        //cancelTimer(socket->timerKey);
-        returnSystemCall(socket->syscallUUID, 0);
+          //cancelTimer(socket->timerKey);
+          returnSystemCall(socket->syscallUUID, 0);
         }
       } /*else if ((~t_header.flag&ACKbit) && (i_header.length == 0)){
         cancelTimer(socket->timerKey);
