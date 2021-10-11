@@ -80,9 +80,9 @@ void TCPAssignment::try_connect(Socket* socket){
   Packet pkt (DATA_START);  
   TCP_Header t_header = {.flag = SYNbit};
   set_packet(socket, &pkt, &t_header);
-  uint8_t buffer[1000];
-  pkt.readData(0, buffer, DATA_START); 
-  TCP_Header* t_header2 = (TCP_Header*) &buffer[TCP_START];
+  //uint8_t buffer[1000];
+  //pkt.readData(0, buffer, DATA_START); 
+  //TCP_Header* t_header2 = (TCP_Header*) &buffer[TCP_START];
   //printf("sendnum: %d,\n", ntohl(t_header2->seq_num));
   //socket->timerKey = addTimer(socket, TimeUtil::makeTime(5, TimeUtil::SEC));
   sendPacket("IPv4", pkt);  
@@ -93,7 +93,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
                                    const SystemCallParameter &param) {
 
   //printf("string: %s, uint: %d\n", "10.0.1.4", inet_addr("10.0.1.4"));
-  //printf("b");
+  printf("b");
   // Remove below
   // (void)syscallUUID;
   // (void)pid;
@@ -407,9 +407,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
  //     printf("syn ack backed\n");
    //   printf("returned ack: %d, current send: %d", ntohs(t_header->ack_num), socket->send_base +1 );
         if (ntohl(t_header->ack_num) == socket->send_base +1){
-          src_addr = socket->host_address;
-          dest_addr = socket->peer_address;
-          
           socket->send_base++;
           socket->ack_base = ntohl(t_header->seq_num)+1;
           socket->state = S_CONNECTED;
@@ -421,7 +418,15 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
           //cancelTimer(socket->timerKey);
           returnSystemCall(socket->syscallUUID, 0);
         }
-      } /*else if ((~t_header.flag&ACKbit) && (i_header.length == 0)){
+      } else if (t_header->flag == SYNbit){
+          socket->ack_base = ntohl(t_header->seq_num)+1;
+          Packet pkt (DATA_START);  
+          t_header->flag = SYNbit | ACKbit;
+          set_packet(socket, &pkt, t_header);
+          sendPacket("IPv4", pkt);  
+      }
+      
+       /*else if ((~t_header.flag&ACKbit) && (i_header.length == 0)){
         cancelTimer(socket->timerKey);
         try_connect(socket);
       } else {
