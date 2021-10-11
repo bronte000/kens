@@ -73,12 +73,14 @@ void TCPAssignment::set_packet(const Socket* socket, Packet* pkt, TCP_Header* tc
 
 // call with socket trying to connecting
 void TCPAssignment::try_connect(Socket* socket){
-  assert(0);
+  printf("src ip: %d, port: %d, dest ip: %d, port: %d.\n", ntohl(socket->host_address.sin_addr.s_addr),
+    ntohs(socket->host_address.sin_port), ntohl(socket->peer_address.sin_addr.s_addr), ntohs(socket->peer_address.sin_port));
+ // printf("recieevd seq: %d, ack: %d, pid: %d, flag: %x\n",
   assert(socket->state == S_CONNECTING);
   Packet pkt (DATA_START);  
   TCP_Header t_header2 = {.flag = SYNbit};
   set_packet(socket, &pkt, &t_header2);
-  socket->timerKey = addTimer(socket, TimeUtil::makeTime(5, TimeUtil::SEC));
+  //socket->timerKey = addTimer(socket, TimeUtil::makeTime(5, TimeUtil::SEC));
   sendPacket("IPv4", pkt);  
   return;
 }
@@ -86,6 +88,8 @@ void TCPAssignment::try_connect(Socket* socket){
 void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
                                    const SystemCallParameter &param) {
 
+  //printf("string: %s, uint: %d\n", "10.0.1.4", inet_addr("10.0.1.4"));
+  //printf("b");
   // Remove below
   // (void)syscallUUID;
   // (void)pid;
@@ -166,7 +170,6 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     // param.param3_int);
     break;
   case CONNECT: {
-    break;
     // this->syscall_connect(syscallUUID, pid, param.param1_int,
     //		static_cast<struct sockaddr*>(param.param2_ptr),
     //(socklen_t)param.param3_int);
@@ -174,12 +177,31 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     int map_key = pid * 10 + socket_descriptor;
     if (socket_map.find(map_key) != socket_map.end()){
       struct Socket* socket = socket_map[map_key];
+      const sockaddr_in* dest_addr = 	static_cast<struct sockaddr_in*>(param.param2_ptr);
       if(socket->state != S_BIND){
         // should bind with arbitrary adrress;
+        //char char_ip[INET_ADDRSTRLEN];
+        //uint8 uns_char_ip[4] = 
+        //inet_ntop(AF_INET, &(dest_addr->sin_addr), char_ip, INET_ADDRSTRLEN);
+        ipv4_t dest_ip = NetworkUtil::UINT64ToArray<4>(dest_addr->sin_addr.s_addr);
+        int nic_port = getRoutingTable(dest_ip);
+        std::optional<ipv4_t> ip_option = getIPAddr(nic_port); // retrieve the source IP address
+        assert(ip_option.has_value());
+        ipv4_t src_ip = ip_option.value();
+    /*    char str_buffer[128];
+        snprintf(str_buffer, sizeof(str_buffer), "%u.%u.%u.%u", ip[0], ip[1], ip[2], ip[3]);
+        std::string str_ip(str_buffer); */
+        sockaddr_in src_addr = {.sin_family = AF_INET};
+        src_addr.sin_addr.s_addr = NetworkUtil::arrayToUINT64<4>(src_ip);//inet_addr(str_ip.c_str());
+        src_addr.sin_port = htons(5000);
+        while (find_socket(&src_addr, nullptr) != -1){
+          src_addr.sin_port = htons(ntohs(src_addr.sin_port) + 1);
+        }
+        socket->host_address = src_addr;
       }
       socket->state = S_CONNECTING;
       socket->syscallUUID = syscallUUID;
-      socket->peer_address = *(const sockaddr_in*) param.param2_ptr;
+      socket->peer_address = *dest_addr;
       try_connect(socket);
     } else {
       returnSystemCall(syscallUUID, -1);
@@ -375,23 +397,36 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       break;
     }
     case S_CONNECTING:{
-      return;
-      if(t_header->flag&SYNbit && t_header->flag&ACKbit){
-        if (t_header->ack_num == socket->send_base +1){
+      //printf("connecting\n");
+      if(t_header->flag == (SYNbit | ACKbit)){
+      printf("syn ack backed\n");
+      printf("returned ack: %d, current send: %d", ntohs(t_header->ack_num), socket->send_base +1 )
+        if (ntohs(t_header->ack_num) == socket->send_base +1){
+          src_addr = socket->host_address;
+          dest_addr = socket->peer_address;
+  printf("src ip: %d, port: %d, dest ip: %d, port: %d.\n", ntohl(src_addr.sin_addr.s_addr),
+    ntohs(src_addr.sin_port), ntohl(dest_addr.sin_addr.s_addr), ntohs(dest_addr.sin_port));
+          
         socket->send_base++;
+        socket->ack_base = ntohs(t_header->seq_num)+1;
         socket->state = S_CONNECTED;
-        cancelTimer(socket->timerKey);
+        Packet pkt (DATA_START);  
+        t_header->flag = ACKbit;
+        set_packet(socket, &pkt, t_header);
+        sendPacket("IPv4", pkt);  
+
+        //cancelTimer(socket->timerKey);
         returnSystemCall(socket->syscallUUID, 0);
         }
       } /*else if ((~t_header.flag&ACKbit) && (i_header.length == 0)){
         cancelTimer(socket->timerKey);
         try_connect(socket);
-      } */else {
+      } else {
         assert(pkt_size > DATA_START);
         socket->state = S_BIND;
         cancelTimer(socket->timerKey);
         returnSystemCall(socket->syscallUUID, -1);
-      }
+      } */
       break;
     }
     case S_ACCEPTING:{
