@@ -73,8 +73,8 @@ struct Socket {
   S_STATE state = S_DEFAULT;
   uint backlog = 0;
   //uint accepting_num=0;   //why do we need
-  seq_t send_base = 0;
-  seq_t ack_base = 0;
+  seq_t send_base = 10;
+  seq_t ack_base = 10;
   int pid;
   int sd;
   UUID syscallUUID;
