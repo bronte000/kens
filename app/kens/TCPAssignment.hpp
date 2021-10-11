@@ -76,14 +76,14 @@ struct Socket {
   seq_t ack_base = 10;
   int pid;
   int sd;
-  UUID syscallUUID;
+  UUID syscallUUID = 0;
   UUID timerKey;
   // For accept
   uint backlog = 0;
   int listen_key;	
   uint back_count = 0;
   bool accept_called = false;
-  Socket* accepted_socket;
+  Socket* accepted_socket = nullptr;
   struct sockaddr* return_address;
   socklen_t* return_addr_len;
   //std::queue<struct Socket*> backlog_queue;

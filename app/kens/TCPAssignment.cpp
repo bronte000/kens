@@ -88,7 +88,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
   // Remove below
   // (void)syscallUUID;
   // (void)pid;
-
+ // printf("uuid: %ld, syscall: %d, pid: %d\n", syscallUUID, param.syscallNumber, pid);
   switch (param.syscallNumber) {
   case SOCKET: {
     // this->syscall_socket(syscallUUID, pid, param.param1_int,
@@ -99,6 +99,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
 
     int socket_descriptor = createFileDescriptor(pid);
     assert(socket_descriptor > -1);
+//  printf("open syscall: %d, pid: %d\n", socket_descriptor, pid); 
     int map_key = pid * 10 + socket_descriptor;
     Socket* new_socket = new Socket(pid, socket_descriptor);
     new_socket->pid = pid;
@@ -112,6 +113,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     // this->syscall_close(syscallUUID, pid, param.param1_int);
     int socket_descriptor = param.param1_int;
     int map_key = pid * 10 + socket_descriptor;
+//  printf("close syscall: %d, pid: %d\n", socket_descriptor, pid); 
     if (socket_map.find(map_key) == socket_map.end()){
       returnSystemCall(syscallUUID, -1);
     }
@@ -196,6 +198,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
           int new_key = pid * 10 + new_sd;
           Socket * new_socket= new Socket(pid, new_sd);
           new_socket->state = S_BLOCKED;
+          assert(socket_map.find(new_key) == socket_map.end());
           socket_map[new_key] = new_socket;
           socket->accepted_socket = new_socket;
           socket->back_count++;
@@ -303,7 +306,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   }
 
   Socket* socket = socket_map[map_key];
-  printf("state: %d\n", socket->state);
+  //printf("state: %d\n", socket->state);
   switch (socket->state) {
     case S_DEFAULT: case S_BIND:
       break;
@@ -312,8 +315,10 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       if((!socket->accept_called) && (socket->back_count >= socket->backlog)) break;
       if (t_header->flag&SYNbit){
         Socket* new_socket;
-        if (socket->accept_called){
+        if (socket->accepted_socket){
           new_socket = socket->accepted_socket;
+          assert(new_socket->state == S_BLOCKED);
+          socket->accepted_socket = nullptr;
         } else {
           int socket_descriptor = createFileDescriptor(socket->pid);
           new_socket = new Socket(socket->pid, socket_descriptor);
@@ -323,6 +328,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         }
         new_socket->host_address = dest_addr;
         new_socket->peer_address = src_addr;
+        assert(new_socket->state != S_CONNECTED);
         new_socket->state = S_ACCEPTING;
         new_socket->ack_base =  ntohl(t_header->seq_num) + 1;
         new_socket->listen_key = map_key;
@@ -336,6 +342,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       break;
     }
     case S_CONNECTING:{
+      return;
       if(t_header->flag&SYNbit && t_header->flag&ACKbit){
         if (t_header->ack_num == socket->send_base +1){
         socket->send_base++;
@@ -364,7 +371,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
           socket->state = S_CONNECTED;
           memcpy(listensk->return_address, &socket->peer_address, sizeof(struct sockaddr));
           *(listensk->return_addr_len) = sizeof(struct sockaddr);
-          //returnSystemCall(listensk->syscallUUID, socket->sd);
+      //    printf("uuid: %ld, sd: %d\n", listensk->syscallUUID, socket->sd);
+          returnSystemCall(listensk->syscallUUID, socket->sd);
         } else {
           socket->state=S_BLOCKED;
           listensk->connected_queue.push(socket);
@@ -398,6 +406,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 void TCPAssignment::timerCallback(std::any payload) {
   // Remove below
   // (void)payload;
+  assert(0);
   Socket* socket = std::any_cast<Socket*>(payload);
   assert(socket);
   if (socket->state == S_CONNECTING){
