@@ -41,6 +41,8 @@ enum S_STATE {
   S_ACCEPTING,
   S_CONNECTED,
   S_BLOCKED,
+  S_CLOSE_WAIT,
+  S_FINWAIT1,
 };
 
 struct IP_Header {
@@ -83,6 +85,7 @@ struct Socket {
   int listen_key;	
   uint back_count = 0;
   bool accept_called = false;
+  bool close_available = false;
   Socket* accepted_socket = nullptr;
   struct sockaddr* return_address;
   socklen_t* return_addr_len;

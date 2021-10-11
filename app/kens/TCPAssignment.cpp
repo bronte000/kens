@@ -118,10 +118,41 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
       returnSystemCall(syscallUUID, -1);
     }
     else {
-      removeFileDescriptor(pid, socket_descriptor);
-      delete(socket_map[map_key]);
-      socket_map.erase(map_key);
-      returnSystemCall(syscallUUID, 0);
+      Socket *socket=socket_map[map_key];
+      switch (socket->state) {
+      case S_CLOSE_WAIT:{
+        uint8_t buffer[20];
+        TCP_Header* t_header = (TCP_Header*) &buffer[0];
+        Packet pkt (DATA_START);  
+        t_header->flag = FINbit;
+        socket->close_available=true;
+        //Additional t_header initialize?
+        
+        //socket sequence number random??
+        set_packet(socket, &pkt, t_header);
+        sendPacket("IPv4", pkt); 
+        socket->send_base++; //CHECK!!!!
+      }
+      case S_CONNECTED:{
+        uint8_t buffer[20];
+        TCP_Header* t_header = (TCP_Header*) &buffer[0];
+        Packet pkt (DATA_START);  
+        t_header->flag = FINbit;
+        socket->state=S_FINWAIT1;//FIN WAIT1
+        //Additional t_header initialize?
+        //socket sequence number random??
+        set_packet(socket, &pkt, t_header);
+        sendPacket("IPv4", pkt); 
+        socket->send_base++;
+        break;
+      }
+      default:
+          removeFileDescriptor(pid, socket_descriptor);
+          delete(socket_map[map_key]);
+          socket_map.erase(map_key);
+          returnSystemCall(syscallUUID, 0);
+      }
+
     }
     break;
   }
@@ -392,8 +423,82 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       }
       break;
     }
-    case S_CONNECTED:
+    case S_CONNECTED:{
+      if(t_header->flag&FINbit){ //I didn't close.. but fin recieved
+        socket->ack_base=ntohl(t_header->seq_num)+1;
+        socket->state=S_CLOSE_WAIT;
+        Packet pkt (DATA_START);
+        t_header->flag = ACKbit;
+        set_packet(socket, &pkt, t_header);
+        sendPacket("IPv4", pkt); 
+        socket->send_base++;
+      }
+    break;
+    }
+    case S_FINWAIT1:{
+      if(t_header->flag&FINbit && t_header->flag&ACKbit){//FINWAIT1 stimulous
+        if (ntohl(t_header->ack_num)==socket->send_base){
+        socket->ack_base =  ntohl(t_header->seq_num) + 1;
+        Packet pkt (DATA_START);  
+        t_header->flag = ACKbit;
+        set_packet(socket, &pkt, t_header);
+        sendPacket("IPv4", pkt);  
+
+        //timewait ???? how???
+
+        removeFileDescriptor(socket->pid, socket->sd);
+        delete(socket_map[map_key]);
+        socket_map.erase(map_key);
+        returnSystemCall(socket->syscallUUID, 0);
+      }}
+      else if( !socket->close_available && (t_header->flag)&FINbit ){//FINWAit -> close
+        socket->ack_base =  ntohl(t_header->seq_num) + 1;
+        Packet pkt (DATA_START);  
+        t_header->flag = ACKbit;
+        set_packet(socket, &pkt, t_header);
+        sendPacket("IPv4", pkt); 
+        socket->send_base++;
+        socket->close_available=true;
+      }
+      else if( !socket->close_available && (ntohl(t_header->flag)&ACKbit) ){//FINWAIT1->FINWAIT2
+      if (ntohl(t_header->ack_num)==socket->send_base){
+        socket->close_available=true;
+      }}
+      else if( socket->close_available ){ //FINWAIT2 or close
+      ///close case
+        if ( (ntohl(t_header->flag)&ACKbit) && ntohl(t_header->ack_num)==socket->send_base){}
+      ///FINWAIT2 case
+        else if((t_header->flag)&FINbit){ 
+          socket->ack_base =  ntohl(t_header->seq_num) + 1;
+          Packet pkt (DATA_START);  
+          t_header->flag = ACKbit;
+          set_packet(socket, &pkt, t_header);
+          sendPacket("IPv4", pkt); 
+          socket->send_base++;
+        }
+      //None of them 
+        else{break;}
+
+        //timewait
+
+        removeFileDescriptor(socket->pid, socket->sd);
+        delete(socket_map[map_key]);
+        socket_map.erase(map_key);
+        returnSystemCall(socket->syscallUUID, 0);
+      }
       break;
+    }
+    case S_CLOSE_WAIT:{
+      printf("%d\n",ntohl(t_header->ack_num) == socket->send_base);
+      if(!socket->close_available){break;}
+      if( (t_header->flag&ACKbit) && ntohl(t_header->ack_num) == socket->send_base ){
+        removeFileDescriptor(socket->pid, socket->sd);
+        delete(socket_map[map_key]);
+        socket_map.erase(map_key);
+        returnSystemCall(socket->syscallUUID, 0);
+      }
+      break;
+    }
     case S_BLOCKED:{
       break;
     }
