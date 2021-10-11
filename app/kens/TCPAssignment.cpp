@@ -73,6 +73,7 @@ void TCPAssignment::set_packet(const Socket* socket, Packet* pkt, TCP_Header* tc
 
 // call with socket trying to connecting
 void TCPAssignment::try_connect(Socket* socket){
+  assert(0);
   assert(socket->state == S_CONNECTING);
   Packet pkt (DATA_START);  
   TCP_Header t_header2 = {.flag = SYNbit};
@@ -318,8 +319,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   TCP_Header* t_header = (TCP_Header*) &buffer[TCP_START];
   uint16_t checksum = t_header->checksum;
   t_header->checksum = 0;
-  //printf("recieevd seq: %d, ack: %d\n", ntohl(t_header->seq_num), ntohl(t_header->ack_num));
-
   if (ntohs(checksum) & NetworkUtil::tcp_sum(i_header->src_ip, i_header->dest_ip,
                &buffer[TCP_START], pkt_size-TCP_START))  return;
 
@@ -337,12 +336,15 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   }
 
   Socket* socket = socket_map[map_key];
-  //printf("state: %d\n", socket->state);
+ /* printf("src ip: %d, port: %d, dest ip: %d, port: %d.\n", ntohl(src_addr.sin_addr.s_addr),
+    ntohs(src_addr.sin_port), ntohl(dest_addr.sin_addr.s_addr), ntohs(dest_addr.sin_port));
+  printf("recieevd seq: %d, ack: %d, pid: %d, flag: %x\n",
+   ntohl(t_header->seq_num), ntohl(t_header->ack_num), socket->pid, t_header->flag);
+  printf("state: %d\n", socket->state);*/
   switch (socket->state) {
     case S_DEFAULT: case S_BIND:
       break;
     case S_LISTEN:{
-      //socket->backlog//backlog
       if((!socket->accept_called) && (socket->back_count >= socket->backlog)) break;
       if (t_header->flag&SYNbit){
         Socket* new_socket;
@@ -357,9 +359,9 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
           assert(socket_map.find(new_key) == socket_map.end());
           socket_map[new_key] = new_socket;
         }
+        assert(new_socket->state != S_CONNECTED);
         new_socket->host_address = dest_addr;
         new_socket->peer_address = src_addr;
-        assert(new_socket->state != S_CONNECTED);
         new_socket->state = S_ACCEPTING;
         new_socket->ack_base =  ntohl(t_header->seq_num) + 1;
         new_socket->listen_key = map_key;
@@ -408,18 +410,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
           socket->state=S_BLOCKED;
           listensk->connected_queue.push(socket);
         }
-       // printf("accept done\n");
-        // Is this working?
-     //   socket->send_base++;
-        socket->ack_base++;
-        Packet pkt (DATA_START);  
-        t_header->flag = ACKbit;
-        set_packet(socket, &pkt, t_header);
-  /*pkt.readData(0, buffer, pkt_size); 
-  t_header = (TCP_Header*) &buffer[TCP_START];
-        printf("recieevd seq: %d, ack: %d\n", ntohl(t_header->seq_num), ntohl(t_header->ack_num));*/
-        sendPacket("IPv4", pkt);  
-      //  printf("accept done2\n");
       }
       break;
     }

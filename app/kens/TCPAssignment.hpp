@@ -56,12 +56,13 @@ struct IP_Header {
   uint32_t dest_ip;   // sum 8 bytes
 }; // should be 20 bytes
 
+// should set unused, flag, recv_wdw, zero, manually
 struct TCP_Header {
   in_port_t src_port; //2byte
   in_port_t dest_port;  //2byte
   seq_t seq_num;  
   seq_t ack_num;  //sum 8 bytes
-  uint8_t unused;
+  uint8_t unused;   
   uint8_t flag;
   uint16_t recv_wdw;
   uint16_t checksum;  
@@ -79,21 +80,21 @@ struct Socket {
   int pid;
   int sd;
   UUID syscallUUID = 0;
-  UUID timerKey;
+  UUID timerKey = 0;
   // For accept
   uint backlog = 0;
-  int listen_key;	
+  int listen_key = -1;	
   uint back_count = 0;
   bool accept_called = false;
   bool close_available = false;
   Socket* accepted_socket = nullptr;
-  struct sockaddr* return_address;
-  socklen_t* return_addr_len;
+  struct sockaddr* return_address = nullptr;
+  socklen_t* return_addr_len = nullptr;
   //std::queue<struct Socket*> backlog_queue;
   std::queue<struct Socket*> connected_queue;
   Socket(int _pid, int _sd){
-    host_address.sin_family = AF_INET;
-    peer_address.sin_family = AF_INET;
+    host_address = {AF_INET, 0, 0};
+    peer_address = {AF_INET, 0, 0};
     pid = _pid;
     sd = _sd;
   }
