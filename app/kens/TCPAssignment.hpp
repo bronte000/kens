@@ -73,13 +73,15 @@ struct Socket {
   S_STATE state = S_DEFAULT;
   uint backlog = 0;
   //uint accepting_num=0;   //why do we need
-  seq_t send_base = 10;
+  seq_t send_base = 10; 
   seq_t ack_base = 10;
   int pid;
   int sd;
   UUID syscallUUID;
   UUID timerKey;
   std::queue<struct Socket*> backlog_queue;
+  std::queue<struct Socket*> loading_queue;
+  int listen_key;
   Socket(int _pid, int _sd){
     host_address.sin_family = AF_INET;
     peer_address.sin_family = AF_INET;

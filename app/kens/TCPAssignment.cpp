@@ -185,7 +185,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
         Socket *new_socket= socket->backlog_queue.front();
         socket->backlog_queue.pop();
         assert(new_socket->state == S_BLOCKED);
-        new_socket->state=S_ACCEPTING;
+        new_socket->state=S_CONNECTED;
         memcpy(param.param2_ptr, &socket->peer_address, sizeof(struct sockaddr));
         *static_cast<socklen_t *>(param.param3_ptr) = sizeof(struct sockaddr);
         new_socket->syscallUUID = syscallUUID;
@@ -300,8 +300,9 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
     case S_LISTEN:{
       //socket->backlog//backlog
       bool accept_waiting = (socket->backlog_queue.size() == 1) && (socket->backlog_queue.front()->state == S_ACCEPTING);
-      //if( (!accept_waiting) && socket->backlog_queue.size() >= socket->backlog) break;
+      if( (!accept_waiting) && (socket->loading_queue.size() >= socket->backlog)) break;
       if (t_header->flag&SYNbit){
+
         Socket* new_socket;
         if (accept_waiting){
           new_socket = socket->backlog_queue.front();
@@ -309,11 +310,12 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         } else {
           int socket_descriptor = createFileDescriptor(socket->pid);
           new_socket = new Socket(socket->pid, socket_descriptor);
-          new_socket->state = S_BLOCKED;
+          new_socket->state = S_ACCEPTING;
         }
         new_socket->host_address = dest_addr;
         new_socket->peer_address = src_addr;
         new_socket->ack_base =  ntohl(t_header->seq_num) + 1;
+        new_socket->listen_key = map_key;
         int map_key = new_socket->pid * 10 + new_socket->sd;
         assert(socket_map.find(map_key) == socket_map.end());
         socket_map[map_key] = new_socket;
@@ -324,7 +326,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         sendPacket("IPv4", pkt);  
         if (accept_waiting) returnSystemCall(new_socket->syscallUUID, new_socket->sd);
         else
-         socket->backlog_queue.push(new_socket);  
+         socket->loading_queue.push(new_socket);  
       } 
       break;
     }
@@ -348,13 +350,22 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       break;
     }
     case S_ACCEPTING:{
-      printf("accepting \n");
+      if(t_header->flag&ACKbit){
+      int listenkey=socket->listen_key;
+      Socket* listensk =socket_map[listenkey];
+      Socket* new_socket=listensk->loading_queue.front();
+      new_socket->state=S_BLOCKED;//temporary
+      listensk->loading_queue.pop();
+      listensk->backlog_queue.push(new_socket);
+
+      }
       break;
     }
     case S_CONNECTED:
       break;
-    case S_BLOCKED:
+    case S_BLOCKED:{
       break;
+    }
     default:
       assert(0);
   }
