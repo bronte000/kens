@@ -188,6 +188,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
         new_socket->state=S_ACCEPTING;
         memcpy(param.param2_ptr, &socket->peer_address, sizeof(struct sockaddr));
         *static_cast<socklen_t *>(param.param3_ptr) = sizeof(struct sockaddr);
+        new_socket->syscallUUID = syscallUUID;
         returnSystemCall(syscallUUID, new_socket->sd);
       } else {
         // wait until S_listen takes it
@@ -276,6 +277,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   TCP_Header* t_header = (TCP_Header*) &buffer[TCP_START];
   uint16_t checksum = t_header->checksum;
   t_header->checksum = 0;
+  printf("recieevd seq: %d, ack: %d\n", ntohl(t_header->seq_num), ntohl(t_header->ack_num));
 
   if (ntohs(checksum) & NetworkUtil::tcp_sum(i_header->src_ip, i_header->dest_ip,
                &buffer[TCP_START], pkt_size-TCP_START))  return;
@@ -283,11 +285,12 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   sockaddr_in src_addr = {.sin_family = AF_INET, .sin_port = t_header->src_port, .sin_addr = in_addr{i_header->src_ip}};
   sockaddr_in dest_addr = {.sin_family = AF_INET, .sin_port = t_header->dest_port, .sin_addr = in_addr{i_header->dest_ip}};
 
-  int map_key = find_socket(&dest_addr, nullptr);  
+  int map_key = find_socket(&dest_addr, &src_addr); 
   if (map_key == -1){
-    //printf("-1 arrived => ip: %d, port: %d.\n", dest_addr.sin_addr, dest_addr.sin_port);
-    //assert(0);
-    return;
+    if ((map_key = find_socket(&dest_addr, nullptr)) == -1){
+      printf("-1 arrived => ip: %d, port: %d.\n", dest_addr.sin_addr, dest_addr.sin_port);
+      //assert(0);
+    }  
   }
 
   Socket* socket = socket_map[map_key];
@@ -297,7 +300,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
     case S_LISTEN:{
       //socket->backlog//backlog
       bool accept_waiting = (socket->backlog_queue.size() == 1) && (socket->backlog_queue.front()->state == S_ACCEPTING);
-      if( (!accept_waiting) && socket->backlog_queue.size() >= socket->backlog) break;
+      //if( (!accept_waiting) && socket->backlog_queue.size() >= socket->backlog) break;
       if (t_header->flag&SYNbit){
         Socket* new_socket;
         if (accept_waiting){
@@ -320,7 +323,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         set_packet(new_socket, &pkt, t_header);
         sendPacket("IPv4", pkt);  
         if (accept_waiting) returnSystemCall(new_socket->syscallUUID, new_socket->sd);
-        else socket->backlog_queue.push(new_socket);  
+        else
+         socket->backlog_queue.push(new_socket);  
       } 
       break;
     }
@@ -344,7 +348,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       break;
     }
     case S_ACCEPTING:{
-
+      printf("accepting \n");
       break;
     }
     case S_CONNECTED:
