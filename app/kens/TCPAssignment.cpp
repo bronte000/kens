@@ -182,22 +182,28 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
         returnSystemCall(syscallUUID,-1);
         break;
       }
-      if(socket->backlog_queue.size()!=0){
-        Socket *new_socket= socket->backlog_queue.front();
-        socket->backlog_queue.pop();
+      if(socket->connected_queue.size()!=0){
+        Socket *new_socket= socket->connected_queue.front();
+        socket->connected_queue.pop();
         assert(new_socket->state == S_BLOCKED);
         new_socket->state=S_CONNECTED;
         memcpy(param.param2_ptr, &socket->peer_address, sizeof(struct sockaddr));
         *static_cast<socklen_t *>(param.param3_ptr) = sizeof(struct sockaddr);
-        new_socket->syscallUUID = syscallUUID;
         returnSystemCall(syscallUUID, new_socket->sd);
       } else {
-        // wait until S_listen takes it
-        Socket *new_socket= new Socket(pid, createFileDescriptor(pid));
-        new_socket->host_address = socket->host_address;
-        new_socket->state = S_ACCEPTING;
-        new_socket->syscallUUID = syscallUUID;
-        socket->backlog_queue.push(new_socket);
+        if (socket->back_count==0){
+          int new_sd = createFileDescriptor(pid);
+          int new_key = pid * 10 + new_sd;
+          Socket * new_socket= new Socket(pid, new_sd);
+          new_socket->state = S_BLOCKED;
+          socket_map[new_key] = new_socket;
+          socket->accepted_socket = new_socket;
+          socket->back_count++;
+        }
+        socket->accept_called = true;
+        socket->syscallUUID = syscallUUID;
+        socket->return_address = static_cast<struct sockaddr*>(param.param2_ptr);
+        socket->return_addr_len = static_cast<socklen_t*>(param.param3_ptr);
       }
     } else {
       returnSystemCall(syscallUUID, -1);
@@ -278,7 +284,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   TCP_Header* t_header = (TCP_Header*) &buffer[TCP_START];
   uint16_t checksum = t_header->checksum;
   t_header->checksum = 0;
-  printf("recieevd seq: %d, ack: %d\n", ntohl(t_header->seq_num), ntohl(t_header->ack_num));
+  //printf("recieevd seq: %d, ack: %d\n", ntohl(t_header->seq_num), ntohl(t_header->ack_num));
 
   if (ntohs(checksum) & NetworkUtil::tcp_sum(i_header->src_ip, i_header->dest_ip,
                &buffer[TCP_START], pkt_size-TCP_START))  return;
@@ -290,7 +296,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   if (map_key == -1){
     map_key = find_socket(&dest_addr, nullptr);
     if (map_key == -1){
-      printf("-1 arrived => ip: %d, port: %d.\n", dest_addr.sin_addr, dest_addr.sin_port);
+      //printf("-1 arrived => ip: %d, port: %d.\n", dest_addr.sin_addr, dest_addr.sin_port);
       //assert(0);
       return;
     }  
@@ -303,34 +309,29 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       break;
     case S_LISTEN:{
       //socket->backlog//backlog
-      bool accept_waiting = (socket->backlog_queue.size() == 1) && (socket->backlog_queue.front()->state == S_ACCEPTING);
-      if( (!accept_waiting) && (socket->loading_queue.size() >= socket->backlog)) break;
+      if((!socket->accept_called) && (socket->back_count >= socket->backlog)) break;
       if (t_header->flag&SYNbit){
-
         Socket* new_socket;
-        if (accept_waiting){
-          new_socket = socket->backlog_queue.front();
-          socket->backlog_queue.pop();
+        if (socket->accept_called){
+          new_socket = socket->accepted_socket;
         } else {
           int socket_descriptor = createFileDescriptor(socket->pid);
           new_socket = new Socket(socket->pid, socket_descriptor);
-          new_socket->state = S_ACCEPTING;
+          int new_key = new_socket->pid * 10 + new_socket->sd;
+          assert(socket_map.find(new_key) == socket_map.end());
+          socket_map[new_key] = new_socket;
         }
         new_socket->host_address = dest_addr;
         new_socket->peer_address = src_addr;
+        new_socket->state = S_ACCEPTING;
         new_socket->ack_base =  ntohl(t_header->seq_num) + 1;
         new_socket->listen_key = map_key;
-        int map_key = new_socket->pid * 10 + new_socket->sd;
-        assert(socket_map.find(map_key) == socket_map.end());
-        socket_map[map_key] = new_socket;
 
         Packet pkt (DATA_START);  
         t_header->flag = SYNbit | ACKbit;
         set_packet(new_socket, &pkt, t_header);
         sendPacket("IPv4", pkt);  
-        if (accept_waiting) returnSystemCall(new_socket->syscallUUID, new_socket->sd);
-        else
-         socket->loading_queue.push(new_socket);  
+        socket->back_count++;
       } 
       break;
     }
@@ -354,14 +355,32 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       break;
     }
     case S_ACCEPTING:{
-      if(t_header->flag&ACKbit){
-      int listenkey=socket->listen_key;
-      Socket* listensk =socket_map[listenkey];
-      Socket* new_socket=listensk->loading_queue.front();
-      new_socket->state=S_BLOCKED;//temporary
-      listensk->loading_queue.pop();
-      listensk->backlog_queue.push(new_socket);
-
+      if(t_header->flag&ACKbit && ntohl(t_header->seq_num) == socket->ack_base){
+        int listenkey=socket->listen_key;
+        Socket* listensk =socket_map[listenkey];
+        listensk->back_count--;
+        if (listensk->accept_called){
+          listensk->accept_called = false;
+          socket->state = S_CONNECTED;
+          memcpy(listensk->return_address, &socket->peer_address, sizeof(struct sockaddr));
+          *(listensk->return_addr_len) = sizeof(struct sockaddr);
+          //returnSystemCall(listensk->syscallUUID, socket->sd);
+        } else {
+          socket->state=S_BLOCKED;
+          listensk->connected_queue.push(socket);
+        }
+       // printf("accept done\n");
+        // Is this working?
+     //   socket->send_base++;
+        socket->ack_base++;
+        Packet pkt (DATA_START);  
+        t_header->flag = ACKbit;
+        set_packet(socket, &pkt, t_header);
+  /*pkt.readData(0, buffer, pkt_size); 
+  t_header = (TCP_Header*) &buffer[TCP_START];
+        printf("recieevd seq: %d, ack: %d\n", ntohl(t_header->seq_num), ntohl(t_header->ack_num));*/
+        sendPacket("IPv4", pkt);  
+      //  printf("accept done2\n");
       }
       break;
     }

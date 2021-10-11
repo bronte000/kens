@@ -71,7 +71,6 @@ struct Socket {
   sockaddr_in peer_address;
   // You may add some other fields below here
   S_STATE state = S_DEFAULT;
-  uint backlog = 0;
   //uint accepting_num=0;   //why do we need
   seq_t send_base = 10; 
   seq_t ack_base = 10;
@@ -79,9 +78,16 @@ struct Socket {
   int sd;
   UUID syscallUUID;
   UUID timerKey;
-  std::queue<struct Socket*> backlog_queue;
-  std::queue<struct Socket*> loading_queue;
-  int listen_key;
+  // For accept
+  uint backlog = 0;
+  int listen_key;	
+  uint back_count = 0;
+  bool accept_called = false;
+  Socket* accepted_socket;
+  struct sockaddr* return_address;
+  socklen_t* return_addr_len;
+  //std::queue<struct Socket*> backlog_queue;
+  std::queue<struct Socket*> connected_queue;
   Socket(int _pid, int _sd){
     host_address.sin_family = AF_INET;
     peer_address.sin_family = AF_INET;
