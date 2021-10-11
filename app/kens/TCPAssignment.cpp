@@ -62,6 +62,7 @@ void TCPAssignment::set_packet(const Socket* socket, Packet* pkt, TCP_Header* tc
   t_header->dest_port = socket->peer_address.sin_port;
   t_header->seq_num = htonl(socket->send_base); 
   t_header->ack_num = htonl(socket->ack_base); 
+  t_header->checksum = 0;
   t_header->checksum = htons(~NetworkUtil::tcp_sum(i_header.src_ip, i_header.dest_ip,
                                 (uint8_t*) t_header, pkt->getSize() - TCP_START));
 
@@ -287,13 +288,16 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 
   int map_key = find_socket(&dest_addr, &src_addr); 
   if (map_key == -1){
-    if ((map_key = find_socket(&dest_addr, nullptr)) == -1){
+    map_key = find_socket(&dest_addr, nullptr);
+    if (map_key == -1){
       printf("-1 arrived => ip: %d, port: %d.\n", dest_addr.sin_addr, dest_addr.sin_port);
       //assert(0);
+      return;
     }  
   }
 
   Socket* socket = socket_map[map_key];
+  printf("state: %d\n", socket->state);
   switch (socket->state) {
     case S_DEFAULT: case S_BIND:
       break;
