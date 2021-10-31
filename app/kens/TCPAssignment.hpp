@@ -48,6 +48,12 @@ enum S_STATE {
   S_FINWAIT1,
 };
 
+enum C_STATE {
+  C_NONE = 0,
+  C_ACCEPT,
+  C_READ,
+};
+
 struct IP_Header {
   uint16_t extra;
   uint16_t length;
@@ -77,27 +83,34 @@ struct Socket {
   sockaddr_in peer_address;
   // You may add some other fields below here
   S_STATE state = S_DEFAULT;
+  C_STATE called = C_NONE;
   //uint accepting_num=0;   //why do we need
   seq_t send_base = 10; 
   seq_t ack_base = 10;
   int pid;
   int sd;
+  // For return
   UUID syscallUUID = 0;
+  void* return_ptr = nullptr;
+  int return_size;
+  socklen_t* return_addr_len = nullptr;
+  // Timer
   UUID timerKey = 0;
   // For accept
   uint backlog = 0;
   int listen_key = -1;	
   uint back_count = 0;
-  bool accept_called = false;
-  bool close_available = false;
   Socket* accepted_socket = nullptr;
-  struct sockaddr* return_address = nullptr;
-  socklen_t* return_addr_len = nullptr;
   //std::queue<struct Socket*> backlog_queue;
   std::queue<struct Socket*> connected_queue;
+  // For close
+  bool close_available = false;
   // For read/write
   uint8_t* recv_buffer; // size: 2000000  2MB
+  size_t recv_base = 0;
+  size_t recv_top = 0;
   uint8_t* send_buffer; // size: 2000000  2MB
+
   Socket(int _pid, int _sd){
     host_address = {AF_INET, 0, 0};
     peer_address = {AF_INET, 0, 0};

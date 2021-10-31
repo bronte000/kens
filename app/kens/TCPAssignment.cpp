@@ -172,6 +172,38 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     uint8_t* buffer = (uint8_t*) param.param2_ptr;
     size_t size = param.param3_int;
 
+    int map_key = pid * 10 + socket_descriptor;
+    if (socket_map.find(map_key) == socket_map.end()){
+      returnSystemCall(syscallUUID, -1);
+    }
+    struct Socket* socket = socket_map[map_key];
+    if (socket->recv_base != socket->recv_top){
+      assert(0);
+      if (socket->recv_base > socket->recv_top){
+        if (socket->recv_base + size <= BUFFER_SIZE){
+          memcpy(buffer, socket->recv_buffer+socket->recv_base, size);
+          socket->recv_base += size;
+        } else {
+          size_t read_byte = BUFFER_SIZE - socket->recv_base;
+          memcpy(buffer, socket->recv_buffer+socket->recv_base, read_byte);
+          size -= read_byte;
+          size = size < socket->recv_top ? size : socket->recv_top;
+          memcpy(buffer, socket->recv_buffer, size);
+          socket->recv_base = size;
+          size += read_byte;
+        }
+      } 
+      if (socket->recv_base < socket->recv_top){
+        size = size < socket->recv_top-socket->recv_base ? size : socket->recv_top-socket->recv_base;
+        memcpy(buffer, socket->recv_buffer+socket->recv_base, size);
+        socket->recv_base += size;
+      }
+      returnSystemCall(syscallUUID, size);
+    }
+    socket->called = C_READ;
+    socket->syscallUUID = syscallUUID;
+    socket->return_ptr = buffer;
+    socket->return_size = size;
     break;
   }
   case WRITE:
@@ -266,9 +298,9 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
           socket->accepted_socket = new_socket;
           socket->back_count++;
         }
-        socket->accept_called = true;
+        socket->called = C_ACCEPT;
         socket->syscallUUID = syscallUUID;
-        socket->return_address = static_cast<struct sockaddr*>(param.param2_ptr);
+        socket->return_ptr = param.param2_ptr;
         socket->return_addr_len = static_cast<socklen_t*>(param.param3_ptr);
       }
     } else {
@@ -377,7 +409,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       break;
     case S_LISTEN:{
     //  printf("listening?\n");
-      if((!socket->accept_called) && (socket->back_count >= socket->backlog)) break;
+      if ((socket->called != C_ACCEPT) && (socket->back_count >= socket->backlog)) break;
       if (t_header->flag&SYNbit){
         Socket* new_socket;
         if (socket->accepted_socket){
@@ -447,10 +479,10 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         int listenkey=socket->listen_key;
         Socket* listensk =socket_map[listenkey];
         listensk->back_count--;
-        if (listensk->accept_called){
-          listensk->accept_called = false;
+        if (listensk->called == C_ACCEPT){
+          listensk->called = C_NONE;
           socket->state = S_CONNECTED;
-          memcpy(listensk->return_address, &socket->peer_address, sizeof(struct sockaddr));
+          memcpy(listensk->return_ptr, &socket->peer_address, sizeof(struct sockaddr));
           *(listensk->return_addr_len) = sizeof(struct sockaddr);
       //    printf("uuid: %ld, sd: %d\n", listensk->syscallUUID, socket->sd);
           returnSystemCall(listensk->syscallUUID, socket->sd);
@@ -470,6 +502,28 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         set_packet(socket, &pkt, t_header);
         sendPacket("IPv4", pkt); 
         socket->send_base++;
+      }
+      if(/*t_header->flag&ACKbit == 0 &&*/ ntohl(t_header->seq_num) == socket->ack_base){
+        if (socket->called == C_READ){
+          int data_size = pkt_size-DATA_START;
+          socket->called = C_NONE;
+          //printf("???%d\n",data_size);
+          data_size = data_size < socket->return_size ? data_size : socket->return_size ;
+          memcpy(socket->return_ptr, &packet_buffer[DATA_START], data_size);
+          returnSystemCall(socket->syscallUUID, data_size);
+          Packet pkt (DATA_START);
+          t_header->flag = ACKbit;
+          socket->ack_base+= data_size;
+          set_packet(socket, &pkt, t_header);
+          sendPacket("IPv4", pkt); 
+        } else {
+          //memcpy(socket->recv_buffer, 
+          //Packet pkt (DATA_START);
+          //t_header->flag = ACKbit;
+          //socket->ack_base++;
+          //set_packet(socket, &pkt, t_header);
+          //sendPacket("IPv4", pkt); 
+        }
       }
     break;
     }
