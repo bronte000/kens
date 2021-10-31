@@ -8,6 +8,7 @@
 #ifndef E_TCPASSIGNMENT_HPP_
 #define E_TCPASSIGNMENT_HPP_
 
+#include <E/E_TimeUtil.hpp>
 #include <E/Networking/E_Host.hpp>
 #include <E/Networking/E_Networking.hpp>
 #include <E/Networking/E_TimerModule.hpp>
@@ -73,7 +74,7 @@ struct TCP_Header {
   seq_t ack_num;  //sum 8 bytes
   uint8_t unused;   
   uint8_t flag;
-  uint16_t recv_wdw;
+  uint16_t recv_wdw = 50;
   uint16_t checksum;  
   uint16_t zero;  // sum 8 bytes
 };  //should be 20 bytes
@@ -95,7 +96,11 @@ struct Socket {
   int return_size;
   socklen_t* return_addr_len = nullptr;
   // Timer
-  UUID timerKey = 0;
+  UUID timer_key = 0;
+  Time start_time;
+  Time RTT = 0;
+  Time DevRTT = 0;
+  Time timeout_interval;
   // For accept
   uint backlog = 0;
   int listen_key = -1;	
@@ -118,6 +123,7 @@ struct Socket {
     peer_address = {AF_INET, 0, 0};
     pid = _pid;
     sd = _sd;
+    timeout_interval = TimeUtil::makeTime(200, TimeUtil::MSEC);
     recv_buffer = (uint8_t*) malloc(sizeof(uint8_t)*BUFFER_SIZE);
     send_buffer = (uint8_t*) malloc(sizeof(uint8_t)*BUFFER_SIZE);
   }
@@ -136,6 +142,7 @@ private:
   int find_socket(const sockaddr_in* host_addr, const sockaddr_in* peer_addr);
   void set_packet(const Socket* src_socket, Packet* pkt, TCP_Header* tcp_buffer);
   void try_connect(Socket* socket);
+  void try_accept(Socket* socket);
   std::map<int, struct Socket*> socket_map;
 
 public:

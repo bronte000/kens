@@ -84,7 +84,23 @@ void TCPAssignment::try_connect(Socket* socket){
   //pkt.readData(0, buffer, DATA_START); 
   //TCP_Header* t_header2 = (TCP_Header*) &buffer[TCP_START];
   //printf("sendnum: %d,\n", ntohl(t_header2->seq_num));
-  //socket->timerKey = addTimer(socket, TimeUtil::makeTime(5, TimeUtil::SEC));
+  socket->start_time = HostModule::getCurrentTime();
+  socket->timer_key = addTimer(socket, socket->timeout_interval);
+  sendPacket("IPv4", pkt);  
+  return;
+}
+
+// call with socket trying to connecting
+void TCPAssignment::try_accept(Socket* socket){
+  /*printf("src ip: %d, port: %d, dest ip: %d, port: %d.\n", ntohl(socket->host_address.sin_addr.s_addr),
+    ntohs(socket->host_address.sin_port), ntohl(socket->peer_address.sin_addr.s_addr), ntohs(socket->peer_address.sin_port));*/
+
+  assert(socket->state == S_ACCEPTING);
+  Packet pkt (DATA_START);  
+  TCP_Header t_header = {.flag = SYNbit | ACKbit};
+  set_packet(socket, &pkt, &t_header);
+  socket->start_time = HostModule::getCurrentTime();
+  socket->timer_key = addTimer(socket, socket->timeout_interval);
   sendPacket("IPv4", pkt);  
   return;
 }
@@ -98,6 +114,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
   // (void)syscallUUID;
   // (void)pid;
  // printf("uuid: %ld, syscall: %d, pid: %d\n", syscallUUID, param.syscallNumber, pid);
+ //printf("syscal : %d\n", param.syscallNumber);
   switch (param.syscallNumber) {
   case SOCKET: {
     // this->syscall_socket(syscallUUID, pid, param.param1_int,
@@ -119,6 +136,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     break;
   }
   case CLOSE:{
+    //printf("close doing\n");
     // this->syscall_close(syscallUUID, pid, param.param1_int);
     int socket_descriptor = param.param1_int;
     int map_key = pid * 10 + socket_descriptor;
@@ -335,6 +353,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     int socket_descriptor = param.param1_int;
     int map_key = pid * 10 + socket_descriptor;
     int validance = -1;
+   //   printf("not find sock name???: \n");
     if (socket_map.find(map_key) != socket_map.end()){
       struct Socket* socket = socket_map[map_key];
       if (socket->state != S_DEFAULT) {
@@ -353,8 +372,10 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     int socket_descriptor = param.param1_int;
     int map_key = pid * 10 + socket_descriptor;
     int validance = -1;
+ //     printf("not find???: \n");
     if (socket_map.find(map_key) != socket_map.end()){
       struct Socket* socket = socket_map[map_key];
+   //   printf("socket state: %d\n", socket->state);
       if (socket->state == S_CONNECTED || socket->state == S_ACCEPTING) {
         memcpy(param.param2_ptr, &socket->peer_address, sizeof(struct sockaddr));
         *static_cast<socklen_t *>(param.param3_ptr) = sizeof(struct sockaddr);
@@ -429,10 +450,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         new_socket->ack_base =  ntohl(t_header->seq_num) + 1;
         new_socket->listen_key = map_key;
 
-        Packet pkt (DATA_START);  
-        t_header->flag = SYNbit | ACKbit;
-        set_packet(new_socket, &pkt, t_header);
-        sendPacket("IPv4", pkt);  
+        try_accept(new_socket);
         socket->back_count++;
       } 
       break;
@@ -451,7 +469,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
           set_packet(socket, &pkt, t_header);
           sendPacket("IPv4", pkt);  
 
-          //cancelTimer(socket->timerKey);
+          cancelTimer(socket->timer_key);
+          //time rtt = HostModule::getCurrentTime() - socket->start_time;
           returnSystemCall(socket->syscallUUID, 0);
         }
       } else if (t_header->flag == SYNbit){
@@ -460,12 +479,12 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
           t_header->flag = SYNbit | ACKbit;
           set_packet(socket, &pkt, t_header);
           sendPacket("IPv4", pkt);  
-      }
-      
-       /*else if ((~t_header.flag&ACKbit) && (i_header.length == 0)){
-        cancelTimer(socket->timerKey);
-        try_connect(socket);
-      } else {
+      } else if (t_header->flag&ACKbit){
+          socket->seq_base++;
+          socket->state = S_CONNECTED;
+          cancelTimer(socket->timer_key);
+          returnSystemCall(socket->syscallUUID, 0);
+      } /*else {
         assert(pkt_size > DATA_START);
         socket->state = S_BIND;
         cancelTimer(socket->timerKey);
@@ -475,6 +494,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
     }
     case S_ACCEPTING:{
       if(t_header->flag&ACKbit && ntohl(t_header->seq_num) == socket->ack_base){
+        cancelTimer(socket->timer_key);
         int listenkey=socket->listen_key;
         Socket* listensk =socket_map[listenkey];
         listensk->back_count--;
@@ -538,6 +558,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       break;
     }
     case S_FINWAIT1:{
+     // printf("finwai\n");
       if(t_header->flag&FINbit && t_header->flag&ACKbit){//FINWAIT1 stimulous
         if (ntohl(t_header->ack_num)==socket->seq_base){
         socket->ack_base =  ntohl(t_header->seq_num) + 1;
@@ -591,7 +612,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       break;
     }
     case S_CLOSE_WAIT:{
-      printf("%d\n",ntohl(t_header->ack_num) == socket->seq_base);
+      //printf("close waiit\n");
+      //printf("%d\n",ntohl(t_header->ack_num) == socket->seq_base);
       if(!socket->close_available){break;}
       if( (t_header->flag&ACKbit) && ntohl(t_header->ack_num) == socket->seq_base ){
         removeFileDescriptor(socket->pid, socket->sd);
@@ -613,11 +635,23 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 void TCPAssignment::timerCallback(std::any payload) {
   // Remove below
   // (void)payload;
-  assert(0);
   Socket* socket = std::any_cast<Socket*>(payload);
   assert(socket);
+ /* switch(socket->state){
+    case S_DEFAULT: case S_BIND: case S_LISTEN: case S_ACCEPTING:
+      assert(0);
+      break;
+    case 
+    case S_CONNECTED: case S_BLOCKED: 
+  S_CLOSE_WAIT,
+  S_FINWAIT1,
+  }*/
   if (socket->state == S_CONNECTING){
     try_connect(socket);
+  } else if (socket->state == S_ACCEPTING) {
+    try_accept(socket);
+  } else {
+    assert(0);
   }
 }
 
