@@ -192,9 +192,12 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
 
     int map_key = pid * 10 + socket_descriptor;
     if (socket_map.find(map_key) == socket_map.end()){
+   //   printf("dont come\n");
       returnSystemCall(syscallUUID, -1);
     }
+  //  printf("read ding\n");
     struct Socket* socket = socket_map[map_key];
+    assert(socket->state == S_CONNECTED);
     if (socket->recv_base != socket->recv_top){
       if (socket->recv_base > socket->recv_top){
         if (socket->recv_base + size <= BUFFER_SIZE){
@@ -215,12 +218,15 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
         memcpy(buffer, socket->recv_buffer+socket->recv_base, size);
         socket->recv_base += size;
       }
+    //  printf("dont come\n");
       returnSystemCall(syscallUUID, size);
     }
     socket->called = C_READ;
     socket->syscallUUID = syscallUUID;
     socket->return_ptr = buffer;
     socket->return_size = size;
+    assert(socket->state == S_CONNECTED);
+  //  printf("read waiting\n");
     break;
   }
   case WRITE:
@@ -513,30 +519,34 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       break;
     }
     case S_CONNECTED:{
-      if(t_header->flag&FINbit){ //I didn't close.. but fin recieved
-        socket->ack_base=ntohl(t_header->seq_num)+1;
-        socket->state=S_CLOSE_WAIT;
-        Packet pkt (DATA_START);
-        t_header->flag = ACKbit;
-        set_packet(socket, &pkt, t_header);
-        sendPacket("IPv4", pkt); 
-        socket->seq_base++;
-        break;
-      }
-      if(ntohl(t_header->seq_num) == socket->ack_base){
+      //printf("reading came, seqnum: %d\n", ntohl(t_header->seq_num) );
+      if(ntohl(t_header->seq_num) == socket->ack_base){          
+        if(t_header->flag&FINbit){ //I didn't close.. but fin recieved
+          //printf("fin recived\n");
+          socket->ack_base=ntohl(t_header->seq_num)+1;
+          socket->state=S_CLOSE_WAIT;
+          Packet pkt (DATA_START);
+          t_header->flag = ACKbit;
+          set_packet(socket, &pkt, t_header);
+          sendPacket("IPv4", pkt); 
+          socket->seq_base++;
+          break;
+        }
+      //printf("base: %d, top: %d\n", socket->recv_base, socket->recv_top);
         int data_start = DATA_START;
         int data_size = pkt_size - DATA_START;
 
         if (socket->called == C_READ){
           size_t read_size = data_size < socket->return_size ? data_size : socket->return_size;
           memcpy(socket->return_ptr, &packet_buffer[data_start], read_size);
+    //      printf("read size: %d\n", read_size);
           returnSystemCall(socket->syscallUUID, read_size);
           socket->called = C_NONE;
           data_start += read_size;
           data_size -= read_size;
           socket->ack_base += read_size;
         }
-        
+        //printf("data size: %d\n", data_size);
         void* recv_top = socket->recv_buffer + socket->recv_top;
         if (socket->recv_top + data_size <= BUFFER_SIZE){
           memcpy(recv_top, &packet_buffer[data_start], data_size);
