@@ -52,23 +52,28 @@ int TCPAssignment::find_socket(const sockaddr_in* host_addr, const sockaddr_in* 
 }
 
 // Write everything. Should set buffer which will be written to packet
-void TCPAssignment::set_packet(const Socket* socket, Packet* pkt, TCP_Header* tcp_buffer){
+void TCPAssignment::set_packet(const Socket* socket, Packet* pkt, uint8_t flag, uint8_t* data){
 
   IP_Header i_header;
-  TCP_Header* t_header = (TCP_Header*) tcp_buffer;
+  TCP_Header t_header;
+  uint8_t packet_buffer[PACKET_SIZE];
   i_header.src_ip = socket->host_address.sin_addr.s_addr;
   i_header.dest_ip = socket->peer_address.sin_addr.s_addr;
-  t_header->src_port = socket->host_address.sin_port;
-  t_header->dest_port = socket->peer_address.sin_port;
-  t_header->seq_num = htonl(socket->seq_base); 
-  t_header->ack_num = htonl(socket->ack_base); 
-  t_header->checksum = 0;
-  t_header->checksum = htons(~NetworkUtil::tcp_sum(i_header.src_ip, i_header.dest_ip,
-                                (uint8_t*) t_header, pkt->getSize() - TCP_START));
+  t_header.src_port = socket->host_address.sin_port;
+  t_header.dest_port = socket->peer_address.sin_port;
+  t_header.seq_num = htonl(socket->seq_base); 
+  t_header.ack_num = htonl(socket->ack_base); 
+  t_header.flag = flag; 
+  t_header.checksum = 0;
+  memcpy(packet_buffer+TCP_START, &t_header, 20);
+  memcpy(packet_buffer+DATA_START, data, pkt->getSize()-DATA_START);
+  t_header.checksum = htons(~NetworkUtil::tcp_sum(i_header.src_ip, i_header.dest_ip,
+                              &packet_buffer[TCP_START], pkt->getSize() - TCP_START));
 
   pkt -> writeData(IP_START, &i_header, sizeof(i_header));
   //pkt -> writeData(IP_START+12, &(i_header.src_ip), 8);
-  pkt -> writeData(TCP_START, t_header, pkt->getSize() - TCP_START);
+  pkt -> writeData(TCP_START, &t_header, 20);
+  pkt -> writeData(DATA_START, data, pkt->getSize() - DATA_START);
 }
 
 // call with socket trying to connecting
@@ -78,8 +83,8 @@ void TCPAssignment::try_connect(Socket* socket){
 
   assert(socket->state == S_CONNECTING);
   Packet pkt (DATA_START);  
-  TCP_Header t_header = {.flag = SYNbit};
-  set_packet(socket, &pkt, &t_header);
+  //TCP_Header t_header = {.flag = SYNbit};
+  set_packet(socket, &pkt, SYNbit, nullptr);
   //uint8_t buffer[1000];
   //pkt.readData(0, buffer, DATA_START); 
   //TCP_Header* t_header2 = (TCP_Header*) &buffer[TCP_START];
@@ -97,8 +102,8 @@ void TCPAssignment::try_accept(Socket* socket){
 
   assert(socket->state == S_ACCEPTING);
   Packet pkt (DATA_START);  
-  TCP_Header t_header = {.flag = SYNbit | ACKbit};
-  set_packet(socket, &pkt, &t_header);
+  //TCP_Header t_header = {.flag = SYNbit | ACKbit};
+  set_packet(socket, &pkt, SYNbit | ACKbit, nullptr);
   socket->start_time = HostModule::getCurrentTime();
   socket->timer_key = addTimer(socket, socket->timeout_interval);
   sendPacket("IPv4", pkt);  
@@ -148,27 +153,23 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
       Socket *socket=socket_map[map_key];
       switch (socket->state) {
       case S_CLOSE_WAIT:{
-        uint8_t packet_buffer[20];
-        TCP_Header* t_header = (TCP_Header*) &packet_buffer[0];
         Packet pkt (DATA_START);  
-        t_header->flag = FINbit;
+        //t_header->flag = FINbit;
         socket->close_available=true;
         //Additional t_header initialize?
         
         //socket sequence number random??
-        set_packet(socket, &pkt, t_header);
+        set_packet(socket, &pkt, FINbit, nullptr);
         sendPacket("IPv4", pkt); 
         socket->seq_base++; //CHECK!!!!
       }
       case S_CONNECTED:{
-        uint8_t packet_buffer[20];
-        TCP_Header* t_header = (TCP_Header*) &packet_buffer[0];
         Packet pkt (DATA_START);  
-        t_header->flag = FINbit;
+        //t_header->flag = FINbit;
         socket->state=S_FINWAIT1;//FIN WAIT1
         //Additional t_header initialize?
         //socket sequence number random??
-        set_packet(socket, &pkt, t_header);
+        set_packet(socket, &pkt, FINbit, nullptr);
         sendPacket("IPv4", pkt); 
         socket->seq_base++;
         break;
@@ -471,8 +472,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
           socket->ack_base = ntohl(t_header->seq_num)+1;
           socket->state = S_CONNECTED;
           Packet pkt (DATA_START);  
-          t_header->flag = ACKbit;
-          set_packet(socket, &pkt, t_header);
+          //t_header->flag = ACKbit;
+          set_packet(socket, &pkt, ACKbit, nullptr);
           sendPacket("IPv4", pkt);  
 
           cancelTimer(socket->timer_key);
@@ -482,8 +483,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       } else if (t_header->flag == SYNbit){
           socket->ack_base = ntohl(t_header->seq_num)+1;
           Packet pkt (DATA_START);  
-          t_header->flag = SYNbit | ACKbit;
-          set_packet(socket, &pkt, t_header);
+          //t_header->flag = SYNbit | ACKbit;
+          set_packet(socket, &pkt, SYNbit | ACKbit, nullptr);
           sendPacket("IPv4", pkt);  
       } else if (t_header->flag&ACKbit){
           socket->seq_base++;
@@ -527,8 +528,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
           socket->ack_base=ntohl(t_header->seq_num)+1;
           socket->state=S_CLOSE_WAIT;
           Packet pkt (DATA_START);
-          t_header->flag = ACKbit;
-          set_packet(socket, &pkt, t_header);
+          //t_header->flag = ACKbit;
+          set_packet(socket, &pkt, ACKbit, nullptr);
           sendPacket("IPv4", pkt); 
           socket->seq_base++;
           break;
@@ -563,8 +564,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       }
 
       Packet pkt (DATA_START);
-      t_header->flag = ACKbit;
-      set_packet(socket, &pkt, t_header);
+      //t_header->flag = ACKbit;
+      set_packet(socket, &pkt, ACKbit, nullptr);
       sendPacket("IPv4", pkt); 
       break;
     }
@@ -574,8 +575,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         if (ntohl(t_header->ack_num)==socket->seq_base){
         socket->ack_base =  ntohl(t_header->seq_num) + 1;
         Packet pkt (DATA_START);  
-        t_header->flag = ACKbit;
-        set_packet(socket, &pkt, t_header);
+        //t_header->flag = ACKbit;
+        set_packet(socket, &pkt, ACKbit, nullptr);
         sendPacket("IPv4", pkt);  
 
         //timewait ???? how???
@@ -589,7 +590,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         socket->ack_base =  ntohl(t_header->seq_num) + 1;
         Packet pkt (DATA_START);  
         t_header->flag = ACKbit;
-        set_packet(socket, &pkt, t_header);
+        set_packet(socket, &pkt, ACKbit, nullptr);
         sendPacket("IPv4", pkt); 
         socket->seq_base++;
         socket->close_available=true;
@@ -605,8 +606,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         else if((t_header->flag)&FINbit){ 
           socket->ack_base =  ntohl(t_header->seq_num) + 1;
           Packet pkt (DATA_START);  
-          t_header->flag = ACKbit;
-          set_packet(socket, &pkt, t_header);
+          //t_header->flag = ACKbit;
+          set_packet(socket, &pkt, ACKbit, nullptr);
           sendPacket("IPv4", pkt); 
           socket->seq_base++;
         }

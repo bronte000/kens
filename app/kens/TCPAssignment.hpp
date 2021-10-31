@@ -140,7 +140,7 @@ class TCPAssignment : public HostModule,
 private:
   virtual void timerCallback(std::any payload) final;
   int find_socket(const sockaddr_in* host_addr, const sockaddr_in* peer_addr);
-  void set_packet(const Socket* src_socket, Packet* pkt, TCP_Header* tcp_buffer);
+  void set_packet(const Socket* src_socket, Packet* pkt, uint8_t flag, uint8_t* data);
   void try_connect(Socket* socket);
   void try_accept(Socket* socket);
   std::map<int, struct Socket*> socket_map;
