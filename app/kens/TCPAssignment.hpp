@@ -85,7 +85,7 @@ struct Socket {
   S_STATE state = S_DEFAULT;
   C_STATE called = C_NONE;
   //uint accepting_num=0;   //why do we need
-  seq_t send_base = 10; 
+  seq_t seq_base = 10; 
   seq_t ack_base = 10;
   int pid;
   int sd;
@@ -110,6 +110,8 @@ struct Socket {
   size_t recv_base = 0;
   size_t recv_top = 0;
   uint8_t* send_buffer; // size: 2000000  2MB
+  size_t send_base = 0;
+  size_t send_top = 0;
 
   Socket(int _pid, int _sd){
     host_address = {AF_INET, 0, 0};

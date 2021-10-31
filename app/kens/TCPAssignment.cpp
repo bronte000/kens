@@ -60,7 +60,7 @@ void TCPAssignment::set_packet(const Socket* socket, Packet* pkt, TCP_Header* tc
   i_header.dest_ip = socket->peer_address.sin_addr.s_addr;
   t_header->src_port = socket->host_address.sin_port;
   t_header->dest_port = socket->peer_address.sin_port;
-  t_header->seq_num = htonl(socket->send_base); 
+  t_header->seq_num = htonl(socket->seq_base); 
   t_header->ack_num = htonl(socket->ack_base); 
   t_header->checksum = 0;
   t_header->checksum = htons(~NetworkUtil::tcp_sum(i_header.src_ip, i_header.dest_ip,
@@ -140,7 +140,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
         //socket sequence number random??
         set_packet(socket, &pkt, t_header);
         sendPacket("IPv4", pkt); 
-        socket->send_base++; //CHECK!!!!
+        socket->seq_base++; //CHECK!!!!
       }
       case S_CONNECTED:{
         uint8_t packet_buffer[20];
@@ -152,7 +152,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
         //socket sequence number random??
         set_packet(socket, &pkt, t_header);
         sendPacket("IPv4", pkt); 
-        socket->send_base++;
+        socket->seq_base++;
         break;
       }
       default:
@@ -442,9 +442,9 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       //printf("connecting\n");
       if(t_header->flag == (SYNbit | ACKbit)){
  //     printf("syn ack backed\n");
-   //   printf("returned ack: %d, current send: %d", ntohs(t_header->ack_num), socket->send_base +1 );
-        if (ntohl(t_header->ack_num) == socket->send_base +1){
-          socket->send_base++;
+   //   printf("returned ack: %d, current send: %d", ntohs(t_header->ack_num), socket->seq_base +1 );
+        if (ntohl(t_header->ack_num) == socket->seq_base +1){
+          socket->seq_base++;
           socket->ack_base = ntohl(t_header->seq_num)+1;
           socket->state = S_CONNECTED;
           Packet pkt (DATA_START);  
@@ -501,7 +501,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         t_header->flag = ACKbit;
         set_packet(socket, &pkt, t_header);
         sendPacket("IPv4", pkt); 
-        socket->send_base++;
+        socket->seq_base++;
       }
       if(/*t_header->flag&ACKbit == 0 &&*/ ntohl(t_header->seq_num) == socket->ack_base){
         if (socket->called == C_READ){
@@ -529,7 +529,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
     }
     case S_FINWAIT1:{
       if(t_header->flag&FINbit && t_header->flag&ACKbit){//FINWAIT1 stimulous
-        if (ntohl(t_header->ack_num)==socket->send_base){
+        if (ntohl(t_header->ack_num)==socket->seq_base){
         socket->ack_base =  ntohl(t_header->seq_num) + 1;
         Packet pkt (DATA_START);  
         t_header->flag = ACKbit;
@@ -549,16 +549,16 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         t_header->flag = ACKbit;
         set_packet(socket, &pkt, t_header);
         sendPacket("IPv4", pkt); 
-        socket->send_base++;
+        socket->seq_base++;
         socket->close_available=true;
       }
       else if( !socket->close_available && (ntohl(t_header->flag)&ACKbit) ){//FINWAIT1->FINWAIT2
-      if (ntohl(t_header->ack_num)==socket->send_base){
+      if (ntohl(t_header->ack_num)==socket->seq_base){
         socket->close_available=true;
       }}
       else if( socket->close_available ){ //FINWAIT2 or close
       ///close case
-        if ( (ntohl(t_header->flag)&ACKbit) && ntohl(t_header->ack_num)==socket->send_base){}
+        if ( (ntohl(t_header->flag)&ACKbit) && ntohl(t_header->ack_num)==socket->seq_base){}
       ///FINWAIT2 case
         else if((t_header->flag)&FINbit){ 
           socket->ack_base =  ntohl(t_header->seq_num) + 1;
@@ -566,7 +566,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
           t_header->flag = ACKbit;
           set_packet(socket, &pkt, t_header);
           sendPacket("IPv4", pkt); 
-          socket->send_base++;
+          socket->seq_base++;
         }
       //None of them 
         else{break;}
@@ -581,9 +581,9 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       break;
     }
     case S_CLOSE_WAIT:{
-      printf("%d\n",ntohl(t_header->ack_num) == socket->send_base);
+      printf("%d\n",ntohl(t_header->ack_num) == socket->seq_base);
       if(!socket->close_available){break;}
-      if( (t_header->flag&ACKbit) && ntohl(t_header->ack_num) == socket->send_base ){
+      if( (t_header->flag&ACKbit) && ntohl(t_header->ack_num) == socket->seq_base ){
         removeFileDescriptor(socket->pid, socket->sd);
         delete(socket_map[map_key]);
         socket_map.erase(map_key);
