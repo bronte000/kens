@@ -33,6 +33,9 @@ const int IP_START = 14;
 const int TCP_START = 34;
 const int DATA_START = 54;
 
+const int BUFFER_SIZE = 2000000;
+const int PACKET_SIZE = 1500 * 8;
+
 enum S_STATE {
   S_DEFAULT = 0,
   S_BIND,
@@ -92,11 +95,20 @@ struct Socket {
   socklen_t* return_addr_len = nullptr;
   //std::queue<struct Socket*> backlog_queue;
   std::queue<struct Socket*> connected_queue;
+  // For read/write
+  uint8_t* recv_buffer; // size: 2000000  2MB
+  uint8_t* send_buffer; // size: 2000000  2MB
   Socket(int _pid, int _sd){
     host_address = {AF_INET, 0, 0};
     peer_address = {AF_INET, 0, 0};
     pid = _pid;
     sd = _sd;
+    recv_buffer = (uint8_t*) malloc(sizeof(uint8_t)*BUFFER_SIZE);
+    send_buffer = (uint8_t*) malloc(sizeof(uint8_t)*BUFFER_SIZE);
+  }
+  ~Socket(){
+    free(recv_buffer);
+    free(send_buffer);
   }
 };
 
@@ -111,7 +123,6 @@ private:
   void try_connect(Socket* socket);
   std::map<int, struct Socket*> socket_map;
 
-  const int BUFFER_SIZE = 2000;
 public:
   TCPAssignment(Host &host);
   virtual void initialize();

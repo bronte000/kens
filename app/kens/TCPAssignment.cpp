@@ -93,7 +93,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
                                    const SystemCallParameter &param) {
 
   //printf("string: %s, uint: %d\n", "10.0.1.4", inet_addr("10.0.1.4"));
-  printf("b");
+  //printf("b");
   // Remove below
   // (void)syscallUUID;
   // (void)pid;
@@ -130,8 +130,8 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
       Socket *socket=socket_map[map_key];
       switch (socket->state) {
       case S_CLOSE_WAIT:{
-        uint8_t buffer[20];
-        TCP_Header* t_header = (TCP_Header*) &buffer[0];
+        uint8_t packet_buffer[20];
+        TCP_Header* t_header = (TCP_Header*) &packet_buffer[0];
         Packet pkt (DATA_START);  
         t_header->flag = FINbit;
         socket->close_available=true;
@@ -143,8 +143,8 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
         socket->send_base++; //CHECK!!!!
       }
       case S_CONNECTED:{
-        uint8_t buffer[20];
-        TCP_Header* t_header = (TCP_Header*) &buffer[0];
+        uint8_t packet_buffer[20];
+        TCP_Header* t_header = (TCP_Header*) &packet_buffer[0];
         Packet pkt (DATA_START);  
         t_header->flag = FINbit;
         socket->state=S_FINWAIT1;//FIN WAIT1
@@ -165,10 +165,15 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     }
     break;
   }
-  case READ:
+  case READ:{
     // this->syscall_read(syscallUUID, pid, param.param1_int, param.param2_ptr,
     // param.param3_int);
+    int socket_descriptor = param.param1_int;
+    uint8_t* buffer = (uint8_t*) param.param2_ptr;
+    size_t size = param.param3_int;
+
     break;
+  }
   case WRITE:
     // this->syscall_write(syscallUUID, pid, param.param1_int, param.param2_ptr,
     // param.param3_int);
@@ -338,15 +343,15 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   // (void)fromModule;
   // (void)packet;
   
-  uint8_t buffer[BUFFER_SIZE];
+  uint8_t packet_buffer[PACKET_SIZE];
   int pkt_size = packet.getSize();
-  packet.readData(0, buffer, pkt_size); 
-  IP_Header* i_header = (IP_Header*) &buffer[IP_START];
-  TCP_Header* t_header = (TCP_Header*) &buffer[TCP_START];
+  packet.readData(0, packet_buffer, pkt_size); 
+  IP_Header* i_header = (IP_Header*) &packet_buffer[IP_START];
+  TCP_Header* t_header = (TCP_Header*) &packet_buffer[TCP_START];
   uint16_t checksum = t_header->checksum;
   t_header->checksum = 0;
   if (ntohs(checksum) & NetworkUtil::tcp_sum(i_header->src_ip, i_header->dest_ip,
-               &buffer[TCP_START], pkt_size-TCP_START))  return;
+               &packet_buffer[TCP_START], pkt_size-TCP_START))  return;
 
   sockaddr_in src_addr = {.sin_family = AF_INET, .sin_port = t_header->src_port, .sin_addr = in_addr{i_header->src_ip}};
   sockaddr_in dest_addr = {.sin_family = AF_INET, .sin_port = t_header->dest_port, .sin_addr = in_addr{i_header->dest_ip}};
