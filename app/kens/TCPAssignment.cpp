@@ -178,7 +178,6 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     }
     struct Socket* socket = socket_map[map_key];
     if (socket->recv_base != socket->recv_top){
-      assert(0);
       if (socket->recv_base > socket->recv_top){
         if (socket->recv_base + size <= BUFFER_SIZE){
           memcpy(buffer, socket->recv_buffer+socket->recv_base, size);
@@ -502,30 +501,41 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         set_packet(socket, &pkt, t_header);
         sendPacket("IPv4", pkt); 
         socket->seq_base++;
+        break;
       }
-      if(/*t_header->flag&ACKbit == 0 &&*/ ntohl(t_header->seq_num) == socket->ack_base){
+      if(ntohl(t_header->seq_num) == socket->ack_base){
+        int data_start = DATA_START;
+        int data_size = pkt_size - DATA_START;
+
         if (socket->called == C_READ){
-          int data_size = pkt_size-DATA_START;
+          size_t read_size = data_size < socket->return_size ? data_size : socket->return_size;
+          memcpy(socket->return_ptr, &packet_buffer[data_start], read_size);
+          returnSystemCall(socket->syscallUUID, read_size);
           socket->called = C_NONE;
-          //printf("???%d\n",data_size);
-          data_size = data_size < socket->return_size ? data_size : socket->return_size ;
-          memcpy(socket->return_ptr, &packet_buffer[DATA_START], data_size);
-          returnSystemCall(socket->syscallUUID, data_size);
-          Packet pkt (DATA_START);
-          t_header->flag = ACKbit;
-          socket->ack_base+= data_size;
-          set_packet(socket, &pkt, t_header);
-          sendPacket("IPv4", pkt); 
-        } else {
-          //memcpy(socket->recv_buffer, 
-          //Packet pkt (DATA_START);
-          //t_header->flag = ACKbit;
-          //socket->ack_base++;
-          //set_packet(socket, &pkt, t_header);
-          //sendPacket("IPv4", pkt); 
+          data_start += read_size;
+          data_size -= read_size;
+          socket->ack_base += read_size;
         }
+        
+        void* recv_top = socket->recv_buffer + socket->recv_top;
+        if (socket->recv_top + data_size <= BUFFER_SIZE){
+          memcpy(recv_top, &packet_buffer[data_start], data_size);
+          socket->recv_top += data_size;
+        } else {
+          size_t first = BUFFER_SIZE - socket->recv_top;
+          size_t second = data_size - first;
+          memcpy(recv_top, &packet_buffer[data_start], first);
+          memcpy(socket->recv_buffer, &packet_buffer[data_start+first], second);
+          socket->recv_top = second;
+        }
+        socket->ack_base += data_size;
       }
-    break;
+
+      Packet pkt (DATA_START);
+      t_header->flag = ACKbit;
+      set_packet(socket, &pkt, t_header);
+      sendPacket("IPv4", pkt); 
+      break;
     }
     case S_FINWAIT1:{
       if(t_header->flag&FINbit && t_header->flag&ACKbit){//FINWAIT1 stimulous
