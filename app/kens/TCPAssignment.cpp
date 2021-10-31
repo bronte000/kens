@@ -501,6 +501,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
     case S_ACCEPTING:{
       if(t_header->flag&ACKbit && ntohl(t_header->seq_num) == socket->ack_base){
         cancelTimer(socket->timer_key);
+        socket->seq_base++;
         int listenkey=socket->listen_key;
         Socket* listensk =socket_map[listenkey];
         listensk->back_count--;
