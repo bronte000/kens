@@ -52,6 +52,7 @@ enum C_STATE {
   C_NONE = 0,
   C_ACCEPT,
   C_READ,
+  C_WRITE,
 };
 
 struct IP_Header {
@@ -112,6 +113,8 @@ struct Socket {
   uint8_t* send_buffer; // size: 2000000  2MB
   size_t send_base = 0;
   size_t send_top = 0;
+  uint16_t recv_wdw;
+  bool send_full=false;
 
   Socket(int _pid, int _sd){
     host_address = {AF_INET, 0, 0};

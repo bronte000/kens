@@ -205,10 +205,72 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     socket->return_size = size;
     break;
   }
-  case WRITE:
+  case WRITE:{
     // this->syscall_write(syscallUUID, pid, param.param1_int, param.param2_ptr,
     // param.param3_int);
+    int socket_descriptor = param.param1_int;
+    uint8_t* buffer = (uint8_t*) param.param2_ptr;
+    size_t size = param.param3_int;
+    size_t data_size=0;
+
+
+    int map_key = pid * 10 + socket_descriptor;
+    if (socket_map.find(map_key) == socket_map.end()){
+      returnSystemCall(syscallUUID, -1);
+    }
+    struct Socket* socket = socket_map[map_key];
+    int ori_send_top = socket->send_top;
+    
+    size_t left_send_window = socket->send_base+socket->recv_wdw-socket->send_top;
+
+  if(!socket->send_full&&size!=0){
+    if (socket->send_base <=socket->send_top){
+      if(socket->send_top + size < BUFFER_SIZE){
+        memcpy(socket->send_buffer+socket->send_top,buffer, size);
+        socket->send_top += size;
+        data_size= size>1460? 1460: size;
+        
+      } 
+      else {
+        size_t send_byte = BUFFER_SIZE - socket->send_top;
+        memcpy(socket->send_buffer+socket->send_top,buffer,send_byte);
+        size -= send_byte;
+        size = size < socket->send_base ? size : socket->send_base
+        ;
+        memcpy(socket->send_buffer,buffer, size);
+        socket->send_top = size;
+        size += send_byte;
+        data_size= send_byte>1460? 1460: send_byte;
+        }
+      }
+    else{ // send_base>send_top
+      if(socket->send_top+size<socket->send_base){
+        memcpy(socket->send_buffer+socket->send_top,buffer, size);
+        socket->send_top += size;
+        data_size= size>1460? 1460: size;
+      }
+    }
+    if(socket->send_top==socket->send_base){socket->send_full=true;}
+    if(data_size>0 && left_send_window>0){
+      data_size= data_size>left_send_window? left_send_window:data_size;
+      uint8_t packet_buffer[data_size+20];
+      TCP_Header* t_header = (TCP_Header*) &packet_buffer[0];
+      t_header->flag = ACKbit;
+      t_header->recv_wdw = socket->recv_wdw;
+      memcpy(&packet_buffer[20],socket->send_buffer+ori_send_top,data_size); 
+      Packet pkt (data_size+DATA_START);  
+      set_packet(socket, &pkt, t_header);
+      sendPacket("IPv4", pkt);
+
+    }
+    returnSystemCall(syscallUUID, size);
+    }
+    socket->called = C_WRITE;
+    socket->syscallUUID = syscallUUID;
+    socket->return_ptr = buffer;
+    socket->return_size = size;
     break;
+  }
   case CONNECT: {
     // this->syscall_connect(syscallUUID, pid, param.param1_int,
     //		static_cast<struct sockaddr*>(param.param2_ptr),
@@ -398,6 +460,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   }
 
   Socket* socket = socket_map[map_key];
+  socket->recv_wdw=t_header->recv_wdw;
  /* printf("src ip: %d, port: %d, dest ip: %d, port: %d.\n", ntohl(src_addr.sin_addr.s_addr),
     ntohs(src_addr.sin_port), ntohl(dest_addr.sin_addr.s_addr), ntohs(dest_addr.sin_port));
   printf("recieevd seq: %d, ack: %d, pid: %d, flag: %x\n",
@@ -474,7 +537,9 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       break;
     }
     case S_ACCEPTING:{
+      printf("Accepting\n");
       if(t_header->flag&ACKbit && ntohl(t_header->seq_num) == socket->ack_base){
+        socket->seq_base++;
         int listenkey=socket->listen_key;
         Socket* listensk =socket_map[listenkey];
         listensk->back_count--;
@@ -529,12 +594,79 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
           socket->recv_top = second;
         }
         socket->ack_base += data_size;
-      }
 
+      //이거 위치 바꿨는데 추가 수정
       Packet pkt (DATA_START);
       t_header->flag = ACKbit;
       set_packet(socket, &pkt, t_header);
       sendPacket("IPv4", pkt); 
+      }
+      /*
+      else if(t_header->flag&ACKbit && ntohl(t_header->ack_num)>socket->seq_base){
+        socket->seq_base= ntohl(t_header->ack_num);
+        int data_start = DATA_START;
+        int data_size = 0;
+        size_t ori_send_top = socket->send_top;
+        int free_size= ntohl(t_header->ack_num)-socket->seq_base;
+        socket->send_base= socket->send_base+free_size<BUFFER_SIZE? socket->send_base+free_size: free_size-BUFFER_SIZE+socket->send_base;
+        int left_send_window = socket->send_base+socket->recv_wdw-socket->send_top;
+
+        if (socket->called == C_WRITE){
+          size_t write_size = free_size < socket->return_size ? free_size : socket->return_size;
+          
+          if (socket->send_base <=socket->send_top){
+            if(socket->send_top + write_size < BUFFER_SIZE){
+            memcpy(socket->send_buffer+socket->send_top,socket->return_ptr, write_size);
+            socket->send_top += write_size;
+            data_size= write_size>1460? 1460: write_size;
+          } 
+          else {
+            size_t send_byte = BUFFER_SIZE - socket->send_top;
+            memcpy(socket->send_buffer+socket->send_top,socket->return_ptr,send_byte);
+            write_size -= send_byte;
+            write_size = write_size < socket->send_base ? write_size : socket->send_base;
+            memcpy(socket->send_buffer,socket->return_ptr, write_size);
+            socket->send_top = write_size;
+            write_size += send_byte;
+            data_size= send_byte>1460? 1460: send_byte;
+          }
+        }
+      else{ // send_base>send_top
+        if(socket->send_top+write_size<socket->send_base){
+          memcpy(socket->send_buffer+socket->send_top,socket->return_ptr, write_size);
+          socket->send_top += write_size;
+          data_size= write_size>1460? 1460: write_size;
+        }
+      }
+      left_send_window = socket->send_base+socket->recv_wdw-socket->send_top;
+      if(socket->send_top==socket->send_base){socket->send_full=true;}else{socket->send_full=false;}
+      if(data_size>0 && left_send_window>0){
+        data_size= data_size>left_send_window? left_send_window:data_size;
+        uint8_t packet_buffer[data_size+20];
+        TCP_Header* t_header = (TCP_Header*) &packet_buffer[0];
+        
+        memcpy(packet_buffer+20,socket->send_buffer+ori_send_top,data_size); // ori_Send_top맞나?
+        Packet pkt (data_size+DATA_START);  
+        set_packet(socket, &pkt, t_header);
+        sendPacket("IPv4", pkt);
+        }
+        returnSystemCall(socket->syscallUUID, write_size);
+        socket->called = C_NONE;
+      }
+
+
+      if(left_send_window>0){
+        data_size= left_send_window>1460? 1460: left_send_window;
+        uint8_t packet_buffer[data_size+20];
+        TCP_Header* t_header = (TCP_Header*) &packet_buffer[0];
+      
+        memcpy(packet_buffer+20,socket->send_buffer+ori_send_top,data_size); // ori_Send_top맞나?
+        Packet pkt (data_size+DATA_START);  
+        set_packet(socket, &pkt, t_header);
+        sendPacket("IPv4", pkt);
+      }
+        
+      }*/
       break;
     }
     case S_FINWAIT1:{
