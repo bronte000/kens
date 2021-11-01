@@ -56,6 +56,7 @@ enum C_STATE {
   C_ACCEPT,
   C_READ,
   C_WRITE,
+  C_CLOSE,
 };
 
 struct IP_Header {

@@ -110,6 +110,60 @@ void TCPAssignment::try_accept(Socket* socket){
   return;
 }
 
+// call with socket trying to writ
+void TCPAssignment::try_write(Socket* socket, bool timeout){
+  /*printf("src ip: %d, port: %d, dest ip: %d, port: %d.\n", ntohl(socket->host_address.sin_addr.s_addr),
+    ntohs(socket->host_address.sin_port), ntohl(socket->peer_address.sin_addr.s_addr), ntohs(socket->peer_address.sin_port));*/
+  assert(socket->state == S_CONNECTED);
+
+ // printf("wrinting\n");
+  if (timeout){
+    size_t sented = socket-> sent_top - socket->send_base;
+    socket->seq_base -= sented;
+    socket->sent_top -= sented;
+  }
+  if (socket->sent_top == socket->send_base){
+    socket->start_time = HostModule::getCurrentTime();
+    socket->timer_key = addTimer(socket, socket->timeout_interval);
+  }
+
+  //printf("top:: %d, base: %d, sent: %d, wdw: %d\n", socket->send_top, socket->send_base, socket->sent_top, socket->rcv_wdw);
+  size_t wdw_top = socket->send_base + socket->rcv_wdw;
+  size_t base = socket->sent_top > socket->send_base ? socket->sent_top : socket->send_base;
+  size_t size = socket->send_top < wdw_top ? socket->send_top - base : wdw_top -base;
+
+  if (size == 0) return;
+  printf("do writing! size: %d\n", size);
+
+  size_t offset = 0;
+  if (socket->sent_top > socket->send_base){
+    offset = socket->sent_top - socket->send_base;
+  } else if (socket->sent_top < socket->send_base){
+    offset = BUFFER_SIZE - socket->send_base + socket->sent_top;
+  }
+
+  Packet pkt (DATA_START + size);  
+  uint8_t data_buffer[size];
+  size_t first = base + size < BUFFER_SIZE ? size : BUFFER_SIZE - base;
+  size_t second = size - first;
+  memcpy(data_buffer, socket->send_buffer+base, first);
+  memcpy(&data_buffer[first], socket->send_buffer, second);
+  socket->seq_base += offset;
+  set_packet(socket, &pkt, ACKbit, data_buffer);
+  socket->seq_base -= offset;
+  sendPacket("IPv4", pkt);  
+
+  socket->sent_top = (base + size) % BUFFER_SIZE;
+  printf("sent top is : %d, offset is %d\n", socket->sent_top, offset);
+
+  if (socket->called == C_WRITE){
+    printf("dd\n");
+    //socket->called = C_DEFAULT;
+    
+  }
+  return;
+}
+
 void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
                                    const SystemCallParameter &param) {
 
@@ -141,7 +195,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     break;
   }
   case CLOSE:{
-    //printf("close doing\n");
+    printf("close doing\n");
     // this->syscall_close(syscallUUID, pid, param.param1_int);
     int socket_descriptor = param.param1_int;
     int map_key = pid * 10 + socket_descriptor;
@@ -151,6 +205,11 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     }
     else {
       Socket *socket=socket_map[map_key];
+      if (socket->send_full || socket->send_base != socket->send_top){
+        socket->called = C_CLOSE;
+        socket->syscallUUID = syscallUUID;
+        break;
+      }
       switch (socket->state) {
       case S_CLOSE_WAIT:{
         Packet pkt (DATA_START);  
@@ -195,6 +254,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     if (socket_map.find(map_key) == socket_map.end()){
    //   printf("dont come\n");
       returnSystemCall(syscallUUID, -1);
+      break;
     }
   //  printf("read ding\n");
     struct Socket* socket = socket_map[map_key];
@@ -221,19 +281,66 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
       }
     //  printf("dont come\n");
       returnSystemCall(syscallUUID, size);
+      break;
     }
+    
     socket->called = C_READ;
     socket->syscallUUID = syscallUUID;
-    socket->return_ptr = buffer;
-    socket->return_size = size;
+    socket->syscall_ptr = buffer;
+    socket->syscall_int = size;
     assert(socket->state == S_CONNECTED);
   //  printf("read waiting\n");
     break;
   }
-  case WRITE:
+  case WRITE:{
     // this->syscall_write(syscallUUID, pid, param.param1_int, param.param2_ptr,
-    // param.param3_int);
+    // param.param3_int); 
+    //printf(" writning\n");
+    int socket_descriptor = param.param1_int;
+    uint8_t* buffer = (uint8_t*) param.param2_ptr;
+    size_t size = param.param3_int;
+    int map_key = pid * 10 + socket_descriptor;
+    if (socket_map.find(map_key) == socket_map.end()){
+   //   printf("size: sss%d\n", size);
+      returnSystemCall(syscallUUID, -1);
+      break;
+    }
+    struct Socket* socket = socket_map[map_key];
+
+    if (!socket->send_full){
+      size_t& send_top = socket->send_top;
+      size_t& send_base = socket->send_base;
+
+      if (send_base <= send_top){
+        size_t first = send_top + size < BUFFER_SIZE ? size : BUFFER_SIZE - send_top;
+        size_t second = size - first <= send_base ? size - first : send_base;
+        //printf("first and second: %d, %d\n", first, second);
+        memcpy(socket->send_buffer + send_top, buffer, first);
+        memcpy(socket->send_buffer, &buffer[first], second);
+        send_top += first + second;
+        send_top = send_top < BUFFER_SIZE ? send_top : send_top - BUFFER_SIZE;
+        size = first+second;
+      } else {  //if (send_base > send_top)
+        size = send_top + size < send_base ? size : send_base - send_top;
+    //    printf("send base > send_top : %d", size);
+        memcpy(socket->send_buffer + send_top, buffer, size);
+        send_top += size;
+      }
+      if (size != 0 && send_base == send_top) socket->send_full = true;
+     // printf("size: %d\n", size);
+      returnSystemCall(syscallUUID, size);
+      try_write(socket, false);
+      break;
+    } 
+
+  //  printf("no space on writning\n");
+    socket->called = C_WRITE;
+    socket->syscallUUID = syscallUUID;
+    socket->syscall_ptr = buffer;
+    socket->syscall_int = size;
+    
     break;
+  }
   case CONNECT: {
     // this->syscall_connect(syscallUUID, pid, param.param1_int,
     //		static_cast<struct sockaddr*>(param.param2_ptr),
@@ -324,7 +431,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
         }
         socket->called = C_ACCEPT;
         socket->syscallUUID = syscallUUID;
-        socket->return_ptr = param.param2_ptr;
+        socket->syscall_ptr = param.param2_ptr;
         socket->return_addr_len = static_cast<socklen_t*>(param.param3_ptr);
       }
     } else {
@@ -427,10 +534,11 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 
   Socket* socket = socket_map[map_key];
  /* printf("src ip: %d, port: %d, dest ip: %d, port: %d.\n", ntohl(src_addr.sin_addr.s_addr),
-    ntohs(src_addr.sin_port), ntohl(dest_addr.sin_addr.s_addr), ntohs(dest_addr.sin_port));
-  printf("recieevd seq: %d, ack: %d, pid: %d, flag: %x\n",
-   ntohl(t_header->seq_num), ntohl(t_header->ack_num), socket->pid, t_header->flag);
-  printf("state: %d\n", socket->state);*/
+    ntohs(src_addr.sin_port), ntohl(dest_addr.sin_addr.s_addr), ntohs(dest_addr.sin_port));*/
+//  printf("recieevd seq: %d, ack: %d, pid: %d, flag: %x\n",
+ //  ntohl(t_header->seq_num), ntohl(t_header->ack_num), socket->pid, t_header->flag);
+ /// printf("state: %d\n", socket->state);
+  socket->rcv_wdw = ntohs(t_header->recv_wdw) / 100;
   switch (socket->state) {
     case S_DEFAULT: case S_BIND:
       break;
@@ -509,7 +617,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         if (listensk->called == C_ACCEPT){
           listensk->called = C_NONE;
           socket->state = S_CONNECTED;
-          memcpy(listensk->return_ptr, &socket->peer_address, sizeof(struct sockaddr));
+          memcpy(listensk->syscall_ptr, &socket->peer_address, sizeof(struct sockaddr));
           *(listensk->return_addr_len) = sizeof(struct sockaddr);
       //    printf("uuid: %ld, sd: %d\n", listensk->syscallUUID, socket->sd);
           returnSystemCall(listensk->syscallUUID, socket->sd);
@@ -521,7 +629,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       break;
     }
     case S_CONNECTED:{
-      //printf("reading came, seqnum: %d\n", ntohl(t_header->seq_num) );
+    //  printf("reading came, seqnum: %d, ack base : %d\n", ntohl(t_header->seq_num), socket->ack_base );
       if(ntohl(t_header->seq_num) == socket->ack_base){          
         if(t_header->flag&FINbit){ //I didn't close.. but fin recieved
           //printf("fin recived\n");
@@ -534,13 +642,29 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
           socket->seq_base++;
           break;
         }
+
+        // case write
+   //     printf("ack come: \n");
+    //    printf("ack num : %d, seq_base : %d\n", ntohl(t_header->ack_num) , socket->seq_base);
+        if (ntohl(t_header->ack_num) > socket->seq_base){
+     //     printf("ack!!");
+          cancelTimer(socket->timer_key);
+          size_t offset = ntohl(t_header->ack_num) - socket->seq_base;
+          socket->seq_base += offset;
+          socket->send_base += offset;
+          try_write(socket, false);
+          break;
+        }
+
       //printf("base: %d, top: %d\n", socket->recv_base, socket->recv_top);
+
+        // case read
         int data_start = DATA_START;
         int data_size = pkt_size - DATA_START;
 
         if (socket->called == C_READ){
-          size_t read_size = data_size < socket->return_size ? data_size : socket->return_size;
-          memcpy(socket->return_ptr, &packet_buffer[data_start], read_size);
+          size_t read_size = data_size < socket->syscall_int ? data_size : socket->syscall_int;
+          memcpy(socket->syscall_ptr, &packet_buffer[data_start], read_size);
     //      printf("read size: %d\n", read_size);
           returnSystemCall(socket->syscallUUID, read_size);
           socket->called = C_NONE;
@@ -663,7 +787,7 @@ void TCPAssignment::timerCallback(std::any payload) {
   } else if (socket->state == S_ACCEPTING) {
     try_accept(socket);
   } else {
-    assert(0);
+    //try_write(socket, true);
   }
 }
 
