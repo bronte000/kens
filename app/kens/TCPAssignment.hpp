@@ -30,6 +30,8 @@ const uint16_t RSTbit = 1 << 2;
 const uint16_t SYNbit = 1 << 1;
 const uint16_t FINbit = 1 << 0;
 
+const uint8_t HEADER_SIZE = 5 << 4;
+
 const int IP_START = 14;
 const int TCP_START = 34;
 const int DATA_START = 54;
@@ -53,6 +55,7 @@ enum C_STATE {
   C_NONE = 0,
   C_ACCEPT,
   C_READ,
+  C_WRITE,
 };
 
 struct IP_Header {
@@ -72,7 +75,7 @@ struct TCP_Header {
   in_port_t dest_port;  //2byte
   seq_t seq_num;  
   seq_t ack_num;  //sum 8 bytes
-  uint8_t unused;   
+  uint8_t unused = HEADER_SIZE;   
   uint8_t flag;
   uint16_t recv_wdw = 50;
   uint16_t checksum;  
@@ -90,10 +93,10 @@ struct Socket {
   seq_t ack_base = 10;
   int pid;
   int sd;
-  // For return
+  // Syscall paramters
   UUID syscallUUID = 0;
-  void* return_ptr = nullptr;
-  int return_size;
+  void* syscall_ptr = nullptr;
+  int syscall_int;
   socklen_t* return_addr_len = nullptr;
   // Timer
   UUID timer_key = 0;
@@ -116,7 +119,11 @@ struct Socket {
   size_t recv_top = 0;
   uint8_t* send_buffer; // size: 2000000  2MB
   size_t send_base = 0;
+  size_t sent_top = 0;
   size_t send_top = 0;
+  bool send_full = false;
+  // flow control
+  size_t rcv_wdw = 0;
 
   Socket(int _pid, int _sd){
     host_address = {AF_INET, 0, 0};
@@ -143,6 +150,7 @@ private:
   void set_packet(const Socket* src_socket, Packet* pkt, uint8_t flag, uint8_t* data);
   void try_connect(Socket* socket);
   void try_accept(Socket* socket);
+  void try_write(Socket* socket, bool timeout);
   std::map<int, struct Socket*> socket_map;
 
 public:
