@@ -118,9 +118,7 @@ void TCPAssignment::try_write(Socket* socket, bool timeout){
 
  // printf("wrinting\n");
   if (timeout){
-    size_t sented = socket-> sent_top - socket->send_base;
-    socket->seq_base -= sented;
-    socket->sent_top -= sented;
+    socket->sent_top = socket->send_base;
   }
   if (socket->sent_top == socket->send_base){
     socket->start_time = HostModule::getCurrentTime();
@@ -133,7 +131,7 @@ void TCPAssignment::try_write(Socket* socket, bool timeout){
   size_t size = socket->send_top < wdw_top ? socket->send_top - base : wdw_top -base;
 
   if (size == 0) return;
-  printf("do writing! size: %d\n", size);
+ // printf("do writing! size: %d\n", size);
 
   size_t offset = 0;
   if (socket->sent_top > socket->send_base){
@@ -154,7 +152,7 @@ void TCPAssignment::try_write(Socket* socket, bool timeout){
   sendPacket("IPv4", pkt);  
 
   socket->sent_top = (base + size) % BUFFER_SIZE;
-  printf("sent top is : %d, offset is %d\n", socket->sent_top, offset);
+ // printf("sent top is : %d, offset is %d\n", socket->sent_top, offset);
 
   if (socket->called == C_WRITE){
     printf("dd\n");
@@ -195,7 +193,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid,
     break;
   }
   case CLOSE:{
-    printf("close doing\n");
+   // printf("close doing\n");
     // this->syscall_close(syscallUUID, pid, param.param1_int);
     int socket_descriptor = param.param1_int;
     int map_key = pid * 10 + socket_descriptor;
@@ -787,7 +785,11 @@ void TCPAssignment::timerCallback(std::any payload) {
   } else if (socket->state == S_ACCEPTING) {
     try_accept(socket);
   } else {
-    //try_write(socket, true);
+   // printf("write timeout state: %d\n", socket->state);
+    if (socket->state == S_CONNECTED) {
+     // printf("try write doing\n");
+      try_write(socket, true);
+    }
   }
 }
 
