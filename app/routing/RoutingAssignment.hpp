@@ -6,6 +6,7 @@
 #ifndef E_ROUTINGASSIGNMENT_HPP_
 #define E_ROUTINGASSIGNMENT_HPP_
 
+#include <E/E_TimeUtil.hpp>
 #include <E/Networking/E_Host.hpp>
 #include <E/Networking/E_Networking.hpp>
 #include <E/Networking/E_TimerModule.hpp>
@@ -73,6 +74,7 @@ const int ENTRY_SIZE = 20;
 
 const int BUFFER_SIZE = 2000000;
 const int PACKET_SIZE = 1500 * 8;
+const int timeout_interval = TimeUtil::makeTime(200, TimeUtil::MSEC);
 
 struct IP_Header {
   uint16_t extra;
@@ -103,7 +105,11 @@ class RoutingAssignment : public HostModule,
                           public TimerModule {
 private:
   virtual void timerCallback(std::any payload) final;
+  void doResponse(bool broadcast, uint32_t dest_ip);
   std::map<uint32_t, uint32_t> routing_table;
+  // Timer
+  UUID timer_key = 0;
+  std::set<int> self_interfaces;
 
 public:
   RoutingAssignment(Host &host);

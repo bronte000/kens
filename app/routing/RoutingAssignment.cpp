@@ -45,6 +45,7 @@ void RoutingAssignment::initialize() {
     Packet pkt (DATA_START + 24);  
     pkt.writeData(IP_START, &packet_buffer[IP_START], DATA_START + 24 - IP_START);
     sendPacket("IPv4", pkt);  
+    self_interfaces.insert(i_header.src_ip);
   }
 
   timer_key = addTimer(1, timeout_interval);
@@ -145,6 +146,9 @@ void RoutingAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       while (ENTRY_START+inc<pkt_size/*rest_size<=0*/) {
         rip_entry_t* entry = (rip_entry_t*) &packet_buffer[DATA_START+4+inc];
         uint32_t src_metric=1;
+        if (self_interfaces.find(entry->ip_addr) != self_interfaces.end()){
+          continue;
+        }
         if(routing_table.find(entry->ip_addr) == routing_table.end()){
           routing_table[entry->ip_addr] = ntohl(entry->metric)+src_metric;}
         else{
@@ -166,8 +170,8 @@ void RoutingAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 void RoutingAssignment::timerCallback(std::any payload) {
   // Remove below
   (void)payload; 
-  doResponse(true, inet_addr("255.255.255.255"));
-  timer_key = addTimer(1, timeout_interval);
+ // doResponse(true, inet_addr("255.255.255.255"));
+ // timer_key = addTimer(1, timeout_interval);
 }
 
 } // namespace E
