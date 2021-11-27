@@ -119,6 +119,19 @@ void RoutingAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       break;
     }
     case 2: {
+      int inc=0;
+      printf("here:%d",pkt_size-(DATA_START+4));
+      while(DATA_START+4+inc<pkt_size/*rest_size<=0*/){
+        rip_entry_t* entry = (rip_entry_t*) &packet_buffer[DATA_START+4+inc];
+        uint32_t src_metric=1;
+        if(routing_table.find(entry->ip_addr) == routing_table.end()){
+          routing_table[entry->ip_addr] = entry->metric+src_metric;}
+        else{
+          if(routing_table[entry->ip_addr] > entry->metric+src_metric)
+          {routing_table[entry->ip_addr]=entry->metric+src_metric;}
+        }
+      inc+=20;
+      }
       break;
     }
     default: {
