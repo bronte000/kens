@@ -34,7 +34,7 @@ void RoutingAssignment::initialize() {
   
   int port_num = getPortCount();
   for (int i = 0; i < port_num; i++){
-    printf("%d", i);
+    //printf("%d", i);
     u_header.checksum = 0;
     i_header.src_ip = NetworkUtil::arrayToUINT64<4>(*getIPAddr(i));//inet_addr("10.0.0.1");
     memcpy(packet_buffer+IP_START, &i_header, 20);
@@ -45,7 +45,7 @@ void RoutingAssignment::initialize() {
     Packet pkt (DATA_START + 24);  
     pkt.writeData(IP_START, &packet_buffer[IP_START], DATA_START + 24 - IP_START);
     sendPacket("IPv4", pkt);  
-    self_interfaces.insert(i_header.src_ip);
+    self_interfaces[i_header.src_ip] = linkCost(i);
     routing_table[i_header.src_ip] = 0;
   }
   timer_key = addTimer(1, timeout_interval);
@@ -133,30 +133,40 @@ void RoutingAssignment::packetArrived(std::string fromModule, Packet &&packet) {
                }
   rip_t* rip = (rip_t*) &packet_buffer[DATA_START];
 
-  routing_table[i_header -> src_ip] = 1;
   switch (rip->header.command){
     case 1: {
+      int outport = getRoutingTable(NetworkUtil::UINT64ToArray<4>(i_header -> src_ip));
+      routing_table[i_header -> src_ip] =  linkCost(outport);
+      //printf("link cost: %d\n", linkCost(outport));
       doResponse(false, i_header->src_ip);
       break;
     }
     case 2: {
       int inc=0;
+      bool changed = false;
+      int outport = getRoutingTable(NetworkUtil::UINT64ToArray<4>(i_header->src_ip));
+      uint32_t src_metric= linkCost(outport);
       //printf("here:%d",pkt_size-(DATA_START+4));
       while (ENTRY_START+inc<pkt_size/*rest_size<=0*/) {
         rip_entry_t* entry = (rip_entry_t*) &packet_buffer[ENTRY_START+inc];
-        uint32_t src_metric=1;
         //printf("ip: %x\n", entry->ip_addr);
         if (self_interfaces.find(entry->ip_addr) != self_interfaces.end()){
           inc+=20;
           continue;
         }
         if(routing_table.find(entry->ip_addr) == routing_table.end()){
-          routing_table[entry->ip_addr] = ntohl(entry->metric)+src_metric;}
+          routing_table[entry->ip_addr] = ntohl(entry->metric)+src_metric;
+          changed = true;}
         else{
-          if(routing_table[entry->ip_addr] > ntohl(entry->metric)+src_metric)
-          {routing_table[entry->ip_addr] = ntohl(entry->metric)+src_metric;}
+          if(routing_table[entry->ip_addr] > ntohl(entry->metric)+src_metric){
+            routing_table[entry->ip_addr] = ntohl(entry->metric)+src_metric;
+            changed = true;
+          }
         }
       inc+=20;
+      }
+      if (changed){
+        doResponse(true, inet_addr("255.255.255.255"));
       }
       break;
     }
@@ -171,7 +181,13 @@ void RoutingAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 void RoutingAssignment::timerCallback(std::any payload) {
   // Remove below
   (void)payload; 
-  doResponse(true, inet_addr("255.255.255.255"));
+  int port_num = getPortCount();
+  for (int i = 0; i < port_num; i++){
+    if (self_interfaces[NetworkUtil::arrayToUINT64<4>(*getIPAddr(i))] != linkCost(i)){
+      doResponse(true, inet_addr("255.255.255.255"));
+      break;
+    }
+  }
   timer_key = addTimer(1, timeout_interval);
 }
 

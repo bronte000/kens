@@ -74,7 +74,7 @@ const int ENTRY_SIZE = 20;
 
 const int BUFFER_SIZE = 2000000;
 const int PACKET_SIZE = 1500 * 8;
-const int timeout_interval = TimeUtil::makeTime(200, TimeUtil::MSEC);
+const int timeout_interval = TimeUtil::makeTime(2, TimeUtil::SEC);
 
 struct IP_Header {
   uint16_t extra;
@@ -109,7 +109,7 @@ private:
   std::map<uint32_t, uint32_t> routing_table;
   // Timer
   UUID timer_key = 0;
-  std::set<int> self_interfaces;
+  std::map<int, int> self_interfaces;
 
 public:
   RoutingAssignment(Host &host);
