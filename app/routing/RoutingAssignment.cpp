@@ -98,8 +98,10 @@ void RoutingAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       }
       
       IP_Header r_i_header;
+      //printf("%d", ntohl(i_header->src_ip));
       r_i_header.dest_ip = i_header->src_ip;
-      r_i_header.src_ip = i_header->dest_ip;
+      int src_port = getRoutingTable(NetworkUtil::UINT64ToArray<4>(i_header->dest_ip));
+      r_i_header.src_ip = NetworkUtil::arrayToUINT64<4>(*getIPAddr(src_port));
       UDP_Header r_u_header {.len = htons(12+size*20)};
       memcpy(packet_buffer+IP_START, &r_i_header, 20);
       memcpy(packet_buffer+UDP_START, &r_u_header, 8);
