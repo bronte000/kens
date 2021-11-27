@@ -61,27 +61,41 @@ Size RoutingAssignment::ripQuery(const ipv4_t &ipv4) {
   auto ip = NetworkUtil::arrayToUINT64<4>(ipv4);
 
   auto route_info = routing_table.find(ip);
-  if (route_info == routing_table.end()){
-    return -1;
-  } else {
+  if (route_info != routing_table.end()){
     return routing_table[ip].cost;
   }
+  return -1;
 }
 
 void RoutingAssignment::packetArrived(std::string fromModule, Packet &&packet) {
-  // Remove below
-  uint8_t packet_buffer[PACKET_SIZE];
+  
   int pkt_size = packet.getSize();
+  uint8_t packet_buffer[PACKET_SIZE];
   packet.readData(0, packet_buffer, pkt_size); 
   IP_Header* i_header = (IP_Header*) &packet_buffer[IP_START];
   UDP_Header* u_header = (UDP_Header*) &packet_buffer[UDP_START];
   uint16_t checksum = u_header->checksum;
-  uint8_t pseudo_buffer[12]={};
-  memcpy(pseudo_buffer, &packet_buffer[UDP_START], 8);
+  u_header->checksum = 0;
   if (ntohs(checksum) & NetworkUtil::tcp_sum(i_header->src_ip, i_header->dest_ip,
-               pseudo_buffer, pkt_size-UDP_START))  return;
-  int new_dt_start=DATA_START;
-  
+               packet_buffer, pkt_size-UDP_START))  {
+                 assert(0);
+                 return;
+               }
+  rip_t* rip = (rip_t*) &packet_buffer[DATA_START];
+
+  switch (rip->header.command){
+    case 1: {
+
+    }
+    case 2: {
+
+    }
+    default: {
+      assert(0);
+    }
+  }
+
+  return;
 }
 
 void RoutingAssignment::timerCallback(std::any payload) {
