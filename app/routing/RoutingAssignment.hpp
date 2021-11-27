@@ -10,6 +10,10 @@
 #include <E/Networking/E_Networking.hpp>
 #include <E/Networking/E_TimerModule.hpp>
 #include <E/Networking/E_Wire.hpp>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <netinet/ip.h>
+#include <netinet/tcp.h>
 
 namespace E {
 
@@ -80,25 +84,11 @@ struct IP_Header {
 
 // should set unused, flag, recv_wdw, zero, manually
 struct UDP_Header {
-  in_port_t src_port; //2byte
-  in_port_t dest_port;  //2byte
+  uint16_t src_port = htons(520); //2byte
+  uint16_t dest_port = htons(520);  //2byte
   uint16_t len;  //2byte
   uint16_t checksum;  //2byte
 };  //should be 8 bytes
-
-struct RIP_data {
-  uint32_t ip;
-  uint32_t zero1 = 0;
-  uint32_t zero2 = 0;
-  uint32_t metric;
-}
-
-struct RIP_header {
-  uint8_t command_version;
-  uint8_t zero1 = 0;
-  uint8_t ad_family = 0;
-  uint8_t zero2 = 0;
-}
 
 class RoutingAssignment : public HostModule,
                           private RoutingInfoInterface,
