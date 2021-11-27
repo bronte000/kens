@@ -88,8 +88,18 @@ Size RoutingAssignment::ripQuery(const ipv4_t &ipv4) {
 
 void RoutingAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   // Remove below
-  (void)fromModule;
-  (void)packet;
+  uint8_t packet_buffer[PACKET_SIZE];
+  int pkt_size = packet.getSize();
+  packet.readData(0, packet_buffer, pkt_size); 
+  IP_Header* i_header = (IP_Header*) &packet_buffer[IP_START];
+  UDP_Header* u_header = (UDP_Header*) &packet_buffer[UDP_START];
+  uint16_t checksum = u_header->checksum;
+  uint8_t pseudo_buffer[12]={};
+  memcpy(pseudo_buffer, &packet_buffer[UDP_START], 8);
+  if (ntohs(checksum) & NetworkUtil::tcp_sum(i_header->src_ip, i_header->dest_ip,
+               pseudo_buffer, pkt_size-UDP_START))  return;
+  int new_dt_start=DATA_START;
+  
 }
 
 void RoutingAssignment::timerCallback(std::any payload) {
