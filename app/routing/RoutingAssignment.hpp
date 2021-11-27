@@ -60,6 +60,46 @@ __attribute__((packed));
 ;
 #endif
 
+const int IP_START = 14;
+const int UDP_START = 34;
+const int DATA_START = 42;
+
+const int BUFFER_SIZE = 2000000;
+const int PACKET_SIZE = 1500 * 8;
+
+struct IP_Header {
+  uint16_t extra;
+  uint16_t length;
+  uint16_t identifier;
+  uint16_t flags;
+  uint16_t lifetime;
+  uint16_t checksum;  // sum 12 byte
+  uint32_t src_ip;  
+  uint32_t dest_ip;   // sum 8 bytes
+}; // should be 20 bytes
+
+// should set unused, flag, recv_wdw, zero, manually
+struct UDP_Header {
+  in_port_t src_port; //2byte
+  in_port_t dest_port;  //2byte
+  uint16_t len;  //2byte
+  uint16_t checksum;  //2byte
+};  //should be 8 bytes
+
+struct RIP_data {
+  uint32_t ip;
+  uint32_t zero1 = 0;
+  uint32_t zero2 = 0;
+  uint32_t metric;
+}
+
+struct RIP_header {
+  uint8_t command_version;
+  uint8_t zero1 = 0;
+  uint8_t ad_family = 0;
+  uint8_t zero2 = 0;
+}
+
 class RoutingAssignment : public HostModule,
                           private RoutingInfoInterface,
                           public TimerModule {
