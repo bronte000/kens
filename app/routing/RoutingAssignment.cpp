@@ -78,6 +78,7 @@ void RoutingAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   u_header->checksum = 0;
   if (ntohs(checksum) & NetworkUtil::tcp_sum(i_header->src_ip, i_header->dest_ip,
                &packet_buffer[UDP_START], pkt_size-UDP_START))  {
+      printf("som?????\n");
                  assert(0);
                  return;
                }
@@ -86,13 +87,13 @@ void RoutingAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   routing_table[i_header -> src_ip] = 1;
   switch (rip->header.command){
     case 1: {
-      struct rip_t response_rip;
       size_t size = routing_table.size();
-      response_rip.header = rip_header_t{.command = 2, .version = 1};
+      rip_header_t response_header = rip_header_t{.command = 2, .version = 1};
+      rip_entry_t response_entries[size];
       size_t it = 0;
       for (const auto& [ip, cost] : routing_table) {
         struct rip_entry_t rip_entry{.address_family = htons(2), .ip_addr = ip, .metric = htonl(cost)};
-        response_rip.entries[it] = rip_entry;
+        response_entries[it] = rip_entry;
         it++;
       }
       
@@ -102,14 +103,17 @@ void RoutingAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       UDP_Header r_u_header {.len = htons(12+size*20)};
       memcpy(packet_buffer+IP_START, &r_i_header, 20);
       memcpy(packet_buffer+UDP_START, &r_u_header, 8);
-      memcpy(packet_buffer+DATA_START, &response_rip, sizeof(response_rip));
+      memcpy(packet_buffer+DATA_START, &response_header, sizeof(response_header));
+      memcpy(packet_buffer+DATA_START+4, &response_entries, sizeof(response_entries));
+      printf("response rip: %ld, size: %ld\n", sizeof(response_entries), size);
   
       r_u_header.checksum = htons(~NetworkUtil::tcp_sum(r_i_header.src_ip, r_i_header.dest_ip,
-                              &packet_buffer[UDP_START], 32));
-      memcpy(packet_buffer+UDP_START, &u_header, 8);
-      Packet pkt (DATA_START + sizeof(response_rip));  
-      pkt.writeData(IP_START, &packet_buffer[IP_START], DATA_START + sizeof(response_rip) - IP_START);
-      sendPacket("IPv4", pkt);  
+                              &packet_buffer[UDP_START], 12 + size*20));
+                 
+      memcpy(packet_buffer+UDP_START, &r_u_header, 8);
+      Packet pkt (DATA_START + 4 + size*20);  
+      pkt.writeData(IP_START, &packet_buffer[IP_START], DATA_START + 4 + size*20 - IP_START);
+      sendPacket("IPv4", pkt);          
       break;
     }
     case 2: {
