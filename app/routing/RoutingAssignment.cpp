@@ -114,7 +114,7 @@ void RoutingAssignment::packetArrived(std::string fromModule, Packet &&packet) {
                  
       memcpy(packet_buffer+UDP_START, &r_u_header, 8);
       Packet pkt (DATA_START + 4 + size*20);  
-      pkt.writeData(IP_START, &packet_buffer[IP_START], DATA_START + 4 + size*20 - IP_START);
+      pkt.writeData(IP_START, &packet_buffer[IP_START], ENTRY_START - IP_START + size*ENTRY_SIZE);
       sendPacket("IPv4", pkt);          
       break;
     }

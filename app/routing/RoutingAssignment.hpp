@@ -67,6 +67,9 @@ __attribute__((packed));
 const int IP_START = 14;
 const int UDP_START = 34;
 const int DATA_START = 42;
+const int ENTRY_START = 46;
+
+const int ENTRY_SIZE = 20;
 
 const int BUFFER_SIZE = 2000000;
 const int PACKET_SIZE = 1500 * 8;
