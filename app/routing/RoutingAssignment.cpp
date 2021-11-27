@@ -26,7 +26,7 @@ void RoutingAssignment::initialize() {
   i_header.dest_ip = inet_addr("255.255.255.255");
   UDP_Header u_header {.len = htons(32)};
   rip_header_t rip_header {.command = 1, .version = 1};
-  rip_entry_t rip_entry {.address_family = htons(2), .metric = htonl(16)};
+  rip_entry_t rip_entry {.metric = htonl(16)};
   uint8_t packet_buffer[DATA_START + 24];
   memcpy(packet_buffer+UDP_START, &u_header, 8);
   memcpy(packet_buffer+DATA_START, &rip_header, 4);
@@ -46,6 +46,8 @@ void RoutingAssignment::initialize() {
     pkt.writeData(IP_START, &packet_buffer[IP_START], DATA_START + 24 - IP_START);
     sendPacket("IPv4", pkt);  
   }
+
+  timer_key = addTimer(1, timeout_interval);
 }
 
 void RoutingAssignment::finalize() {}
@@ -61,10 +63,57 @@ Size RoutingAssignment::ripQuery(const ipv4_t &ipv4) {
   auto ip = NetworkUtil::arrayToUINT64<4>(ipv4);
 
   auto route_info = routing_table.find(ip);
+  printf("\nQUERY!!\n");
   if (route_info != routing_table.end()){
     return routing_table[ip];
   }
   return -1;
+}
+
+void RoutingAssignment::doResponse(bool broadcast, uint32_t dest_ip){
+  size_t count = routing_table.size();
+  rip_header_t response_header = rip_header_t{.command = 2, .version = 1};
+  rip_entry_t response_entries[count];
+  size_t it = 0;
+  for (const auto& [ip, cost] : routing_table) {
+    struct rip_entry_t rip_entry{.address_family = htons(2), .ip_addr = ip, .metric = htonl(cost)};
+    response_entries[it] = rip_entry;
+    it++;
+  }
+      
+  IP_Header i_header;
+  i_header.dest_ip = dest_ip;   
+  int pkt_size = ENTRY_START + count * ENTRY_SIZE;
+  uint8_t packet_buffer[pkt_size];
+  Packet pkt (pkt_size);  
+  UDP_Header u_header { .len = htons(12+count*ENTRY_SIZE) }; 
+  memcpy(packet_buffer+IP_START, &i_header, 20);
+  memcpy(packet_buffer+UDP_START, &u_header, 8);
+  memcpy(packet_buffer+DATA_START, &response_header, sizeof(response_header));
+  memcpy(packet_buffer+ENTRY_START, &response_entries, sizeof(response_entries));
+  if (broadcast){
+    int port_num = getPortCount();
+    for (int i = 0; i < port_num; i++){
+      u_header.checksum = 0;
+      i_header.src_ip = NetworkUtil::arrayToUINT64<4>(*getIPAddr(i));//inet_addr("10.0.0.1");
+      memcpy(packet_buffer+IP_START, &i_header, 20);
+      memcpy(packet_buffer+UDP_START, &u_header, 8);
+      u_header.checksum = htons(~NetworkUtil::tcp_sum(i_header.src_ip, i_header.dest_ip,
+                              &packet_buffer[UDP_START],  pkt_size - UDP_START));
+      memcpy(packet_buffer+UDP_START, &u_header, 8);
+      pkt.writeData(IP_START, &packet_buffer[IP_START], pkt_size - IP_START);
+      sendPacket("IPv4", pkt);  
+    }
+  } else {
+    int src_port = getRoutingTable(NetworkUtil::UINT64ToArray<4>(dest_ip));
+    i_header.src_ip = NetworkUtil::arrayToUINT64<4>(*getIPAddr(src_port));
+    memcpy(packet_buffer+IP_START, &i_header, 20);
+    u_header.checksum = htons(~NetworkUtil::tcp_sum(i_header.src_ip, i_header.dest_ip,
+                              &packet_buffer[UDP_START], pkt_size - UDP_START));
+    memcpy(packet_buffer+UDP_START, &u_header, 8);
+    pkt.writeData(IP_START, &packet_buffer[IP_START], pkt_size - IP_START);
+    sendPacket("IPv4", pkt);     
+  } 
 }
 
 void RoutingAssignment::packetArrived(std::string fromModule, Packet &&packet) {
@@ -87,48 +136,20 @@ void RoutingAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   routing_table[i_header -> src_ip] = 1;
   switch (rip->header.command){
     case 1: {
-      size_t size = routing_table.size();
-      rip_header_t response_header = rip_header_t{.command = 2, .version = 1};
-      rip_entry_t response_entries[size];
-      size_t it = 0;
-      for (const auto& [ip, cost] : routing_table) {
-        struct rip_entry_t rip_entry{.address_family = htons(2), .ip_addr = ip, .metric = htonl(cost)};
-        response_entries[it] = rip_entry;
-        it++;
-      }
-      
-      IP_Header r_i_header;
-      //printf("%d", ntohl(i_header->src_ip));
-      r_i_header.dest_ip = i_header->src_ip;
-      int src_port = getRoutingTable(NetworkUtil::UINT64ToArray<4>(i_header->dest_ip));
-      r_i_header.src_ip = NetworkUtil::arrayToUINT64<4>(*getIPAddr(src_port));
-      UDP_Header r_u_header {.len = htons(12+size*20)};
-      memcpy(packet_buffer+IP_START, &r_i_header, 20);
-      memcpy(packet_buffer+UDP_START, &r_u_header, 8);
-      memcpy(packet_buffer+DATA_START, &response_header, sizeof(response_header));
-      memcpy(packet_buffer+DATA_START+4, &response_entries, sizeof(response_entries));
-      printf("response rip: %ld, size: %ld\n", sizeof(response_entries), size);
-  
-      r_u_header.checksum = htons(~NetworkUtil::tcp_sum(r_i_header.src_ip, r_i_header.dest_ip,
-                              &packet_buffer[UDP_START], 12 + size*20));
-                 
-      memcpy(packet_buffer+UDP_START, &r_u_header, 8);
-      Packet pkt (DATA_START + 4 + size*20);  
-      pkt.writeData(IP_START, &packet_buffer[IP_START], ENTRY_START - IP_START + size*ENTRY_SIZE);
-      sendPacket("IPv4", pkt);          
+      doResponse(false, i_header->src_ip);
       break;
     }
     case 2: {
       int inc=0;
-      printf("here:%d",pkt_size-(DATA_START+4));
-      while(DATA_START+4+inc<pkt_size/*rest_size<=0*/){
+      //printf("here:%d",pkt_size-(DATA_START+4));
+      while (ENTRY_START+inc<pkt_size/*rest_size<=0*/) {
         rip_entry_t* entry = (rip_entry_t*) &packet_buffer[DATA_START+4+inc];
         uint32_t src_metric=1;
         if(routing_table.find(entry->ip_addr) == routing_table.end()){
-          routing_table[entry->ip_addr] = entry->metric+src_metric;}
+          routing_table[entry->ip_addr] = ntohl(entry->metric)+src_metric;}
         else{
-          if(routing_table[entry->ip_addr] > entry->metric+src_metric)
-          {routing_table[entry->ip_addr]=entry->metric+src_metric;}
+          if(routing_table[entry->ip_addr] > ntohl(entry->metric)+src_metric)
+          {routing_table[entry->ip_addr] = ntohl(entry->metric)+src_metric;}
         }
       inc+=20;
       }
@@ -145,6 +166,8 @@ void RoutingAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 void RoutingAssignment::timerCallback(std::any payload) {
   // Remove below
   (void)payload; 
+  doResponse(true, inet_addr("255.255.255.255"));
+  timer_key = addTimer(1, timeout_interval);
 }
 
 } // namespace E
