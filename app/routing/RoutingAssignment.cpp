@@ -46,8 +46,8 @@ void RoutingAssignment::initialize() {
     pkt.writeData(IP_START, &packet_buffer[IP_START], DATA_START + 24 - IP_START);
     sendPacket("IPv4", pkt);  
     self_interfaces.insert(i_header.src_ip);
+    routing_table[i_header.src_ip] = 0;
   }
-
   timer_key = addTimer(1, timeout_interval);
 }
 
@@ -64,7 +64,6 @@ Size RoutingAssignment::ripQuery(const ipv4_t &ipv4) {
   auto ip = NetworkUtil::arrayToUINT64<4>(ipv4);
 
   auto route_info = routing_table.find(ip);
-  printf("\nQUERY!!\n");
   if (route_info != routing_table.end()){
     return routing_table[ip];
   }
@@ -144,8 +143,9 @@ void RoutingAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       int inc=0;
       //printf("here:%d",pkt_size-(DATA_START+4));
       while (ENTRY_START+inc<pkt_size/*rest_size<=0*/) {
-        rip_entry_t* entry = (rip_entry_t*) &packet_buffer[DATA_START+4+inc];
+        rip_entry_t* entry = (rip_entry_t*) &packet_buffer[ENTRY_START+inc];
         uint32_t src_metric=1;
+        //printf("ip: %x\n", entry->ip_addr);
         if (self_interfaces.find(entry->ip_addr) != self_interfaces.end()){
           inc+=20;
           continue;
