@@ -90,11 +90,17 @@ struct UDP_Header {
   uint16_t checksum;  //2byte
 };  //should be 8 bytes
 
+struct Route_Info {
+  uint16_t out_port;
+  uint16_t cost;
+};
+
 class RoutingAssignment : public HostModule,
                           private RoutingInfoInterface,
                           public TimerModule {
 private:
   virtual void timerCallback(std::any payload) final;
+  std::map<int, Route_Info> routing_table;
 
 public:
   RoutingAssignment(Host &host);
