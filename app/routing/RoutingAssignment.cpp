@@ -26,7 +26,7 @@ void RoutingAssignment::initialize() {
   i_header.dest_ip = inet_addr("255.255.255.255");
   UDP_Header u_header {.len = htons(32)};
   rip_header_t rip_header {.command = 1, .version = 1};
-  rip_entry_t rip_entry {.metric = htonl(16)};
+  rip_entry_t rip_entry {.address_family = htons(2), .metric = htonl(16)};
   uint8_t packet_buffer[DATA_START + 24];
   memcpy(packet_buffer+UDP_START, &u_header, 8);
   memcpy(packet_buffer+DATA_START, &rip_header, 4);
@@ -62,7 +62,7 @@ Size RoutingAssignment::ripQuery(const ipv4_t &ipv4) {
 
   auto route_info = routing_table.find(ip);
   if (route_info != routing_table.end()){
-    return routing_table[ip].cost;
+    return routing_table[ip];
   }
   return -1;
 }
@@ -77,18 +77,43 @@ void RoutingAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   uint16_t checksum = u_header->checksum;
   u_header->checksum = 0;
   if (ntohs(checksum) & NetworkUtil::tcp_sum(i_header->src_ip, i_header->dest_ip,
-               packet_buffer, pkt_size-UDP_START))  {
+               &packet_buffer[UDP_START], pkt_size-UDP_START))  {
                  assert(0);
                  return;
                }
   rip_t* rip = (rip_t*) &packet_buffer[DATA_START];
 
+  routing_table[i_header -> src_ip] = 1;
   switch (rip->header.command){
     case 1: {
-
+      struct rip_t response_rip;
+      size_t size = routing_table.size();
+      response_rip.header = rip_header_t{.command = 2, .version = 1};
+      size_t it = 0;
+      for (const auto& [ip, cost] : routing_table) {
+        struct rip_entry_t rip_entry{.address_family = htons(2), .ip_addr = ip, .metric = htonl(cost)};
+        response_rip.entries[it] = rip_entry;
+        it++;
+      }
+      
+      IP_Header r_i_header;
+      r_i_header.dest_ip = i_header->src_ip;
+      r_i_header.src_ip = i_header->dest_ip;
+      UDP_Header r_u_header {.len = htons(12+size*20)};
+      memcpy(packet_buffer+IP_START, &r_i_header, 20);
+      memcpy(packet_buffer+UDP_START, &r_u_header, 8);
+      memcpy(packet_buffer+DATA_START, &response_rip, sizeof(response_rip));
+  
+      r_u_header.checksum = htons(~NetworkUtil::tcp_sum(r_i_header.src_ip, r_i_header.dest_ip,
+                              &packet_buffer[UDP_START], 32));
+      memcpy(packet_buffer+UDP_START, &u_header, 8);
+      Packet pkt (DATA_START + sizeof(response_rip));  
+      pkt.writeData(IP_START, &packet_buffer[IP_START], DATA_START + sizeof(response_rip) - IP_START);
+      sendPacket("IPv4", pkt);  
+      break;
     }
     case 2: {
-
+      break;
     }
     default: {
       assert(0);

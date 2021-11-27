@@ -100,7 +100,7 @@ class RoutingAssignment : public HostModule,
                           public TimerModule {
 private:
   virtual void timerCallback(std::any payload) final;
-  std::map<int, Route_Info> routing_table;
+  std::map<uint32_t, uint32_t> routing_table;
 
 public:
   RoutingAssignment(Host &host);
